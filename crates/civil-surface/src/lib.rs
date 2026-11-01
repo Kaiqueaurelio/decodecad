@@ -59,6 +59,23 @@ pub struct SurfaceSample {
     pub triangle_index: usize,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct EarthworkVolumes {
+    /// Volume above the reference plane, interpreted as cut.
+    pub cut: f64,
+    /// Volume below the reference plane, interpreted as fill.
+    pub fill: f64,
+    /// Positive when cut exceeds fill; negative when fill exceeds cut.
+    pub net: f64,
+}
+
+#[derive(Clone, Copy)]
+struct VolumePoint {
+    x: f64,
+    y: f64,
+    height: f64,
+}
+
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum SurfaceError {
     #[error("at least three survey points are required to build a TIN")]
@@ -89,6 +106,8 @@ pub enum SurfaceError {
     DegenerateTriangle,
     #[error("too many contour segments (limit {MAX_CONTOUR_SEGMENTS})")]
     TooManyContourSegments,
+    #[error("reference elevation must be finite and within the supported coordinate range")]
+    InvalidReferenceElevation,
 }
 
 #[derive(Clone, Copy)]
@@ -248,6 +267,161 @@ impl TinSurface {
         triangles.sort_by_key(|triangle| triangle.vertices);
         Ok(Self { name: dataset.name.clone(), vertices, triangles })
     }
+}
+
+/// Computes cut and fill volumes between the TIN and a horizontal reference plane.
+///
+/// Terrain above the plane is reported as cut; terrain below it is reported as fill.
+/// The result uses the cube of the coordinate unit declared by the civil project.
+pub fn calculate_plane_volumes(
+    surface: &TinSurface,
+    reference_elevation: f64,
+) -> Result<EarthworkVolumes, SurfaceError> {
+    if !reference_elevation.is_finite() || reference_elevation.abs() > MAX_COORDINATE {
+        return Err(SurfaceError::InvalidReferenceElevation);
+    }
+
+    let mut volumes = EarthworkVolumes::default();
+    for triangle in &surface.triangles {
+        let (Some(a), Some(b), Some(c)) = (
+            surface.vertices.get(triangle.vertices[0]),
+            surface.vertices.get(triangle.vertices[1]),
+            surface.vertices.get(triangle.vertices[2]),
+        ) else {
+            return Err(SurfaceError::InvalidTriangleIndex);
+        };
+
+        let mut points = [VolumePoint {
+            x: 0.0,
+            y: 0.0,
+            height: 0.0,
+        }; 3];
+        for (index, vertex) in [a, b, c].iter().enumerate() {
+            if !valid_coordinate(vertex.coordinate) {
+                return Err(SurfaceError::InvalidCoordinate {
+                    point_id: vertex.point_id.clone(),
+                });
+            }
+            if let Some(point) = points.get_mut(index) {
+                *point = VolumePoint {
+                    x: vertex.coordinate.x,
+                    y: vertex.coordinate.y,
+                    height: vertex.coordinate.z - reference_elevation,
+                };
+            }
+        }
+
+        let area_twice = orientation(
+            Point2 { x: points[0].x, y: points[0].y },
+            Point2 { x: points[1].x, y: points[1].y },
+            Point2 { x: points[2].x, y: points[2].y },
+        );
+        if !area_twice.is_finite() || area_twice == 0.0 {
+            return Err(SurfaceError::DegenerateTriangle);
+        }
+
+        let cut_polygon = clip_height_polygon(&points, true);
+        let fill_polygon = clip_height_polygon(&points, false);
+        volumes.cut += integrate_height_polygon(&cut_polygon, true);
+        volumes.fill += integrate_height_polygon(&fill_polygon, false);
+        if !volumes.cut.is_finite() || !volumes.fill.is_finite() {
+            return Err(SurfaceError::TriangulationFailed);
+        }
+    }
+    volumes.net = volumes.cut - volumes.fill;
+    if !volumes.net.is_finite() {
+        return Err(SurfaceError::TriangulationFailed);
+    }
+    Ok(volumes)
+}
+
+fn clip_height_polygon(triangle: &[VolumePoint; 3], keep_above: bool) -> Vec<VolumePoint> {
+    let inside = |point: VolumePoint| {
+        if keep_above {
+            point.height >= 0.0
+        } else {
+            point.height <= 0.0
+        }
+    };
+    let mut output = Vec::with_capacity(4);
+    let mut previous = triangle[2];
+    let mut previous_inside = inside(previous);
+
+    for current in triangle.iter().copied() {
+        let current_inside = inside(current);
+        if previous_inside && current_inside {
+            push_unique_volume_point(&mut output, current);
+        } else if previous_inside && !current_inside {
+            let intersection = interpolate_zero_height(previous, current);
+            push_unique_volume_point(&mut output, intersection);
+        } else if !previous_inside && current_inside {
+            let intersection = interpolate_zero_height(previous, current);
+            push_unique_volume_point(&mut output, intersection);
+            push_unique_volume_point(&mut output, current);
+        }
+        previous = current;
+        previous_inside = current_inside;
+    }
+
+    if output.len() > 1 {
+        let first = output.first().copied();
+        let last = output.last().copied();
+        if let (Some(first), Some(last)) = (first, last) {
+            if same_planar_point(first, last) {
+                output.pop();
+            }
+        }
+    }
+    output
+}
+
+fn interpolate_zero_height(start: VolumePoint, end: VolumePoint) -> VolumePoint {
+    let denominator = start.height - end.height;
+    let fraction = if denominator == 0.0 {
+        0.0
+    } else {
+        start.height / denominator
+    };
+    VolumePoint {
+        x: start.x + fraction * (end.x - start.x),
+        y: start.y + fraction * (end.y - start.y),
+        height: 0.0,
+    }
+}
+
+fn push_unique_volume_point(points: &mut Vec<VolumePoint>, point: VolumePoint) {
+    if !points.last().copied().is_some_and(|last| same_planar_point(last, point)) {
+        points.push(point);
+    }
+}
+
+fn same_planar_point(first: VolumePoint, second: VolumePoint) -> bool {
+    first.x.to_bits() == second.x.to_bits() && first.y.to_bits() == second.y.to_bits()
+}
+
+fn integrate_height_polygon(polygon: &[VolumePoint], keep_above: bool) -> f64 {
+    if polygon.len() < 3 {
+        return 0.0;
+    }
+    let mut volume = 0.0;
+    let Some(origin) = polygon.first().copied() else {
+        return 0.0;
+    };
+    for index in 1..polygon.len() - 1 {
+        let (Some(second), Some(third)) = (polygon.get(index), polygon.get(index + 1)) else {
+            continue;
+        };
+        let area = orientation(
+            Point2 { x: origin.x, y: origin.y },
+            Point2 { x: second.x, y: second.y },
+            Point2 { x: third.x, y: third.y },
+        )
+        .abs() * 0.5;
+        let height = |value: f64| if keep_above { value.max(0.0) } else { (-value).max(0.0) };
+        let mean_height = (height(origin.height) + height(second.height) + height(third.height)) / 3.0;
+        volume += area * mean_height;
+    }
+    volume
 }
 
 /// Interpolates elevation and computes slope/aspect at an XY position.
@@ -546,6 +720,67 @@ mod tests {
         assert!(surface.is_ok());
         if let Ok(surface) = surface {
             assert_eq!(sample_surface(&surface, 100.0, 100.0), Err(SurfaceError::OutsideSurface));
+        }
+    }
+
+    #[test]
+    fn calculates_cut_and_fill_against_a_horizontal_plane() {
+        let above = dataset(&[
+            (0.0, 0.0, 10.0),
+            (10.0, 0.0, 10.0),
+            (0.0, 10.0, 10.0),
+        ]);
+        let below = dataset(&[
+            (0.0, 0.0, -10.0),
+            (10.0, 0.0, -10.0),
+            (0.0, 10.0, -10.0),
+        ]);
+        let above_surface = TinSurface::from_survey(&above);
+        let below_surface = TinSurface::from_survey(&below);
+        assert!(above_surface.is_ok());
+        assert!(below_surface.is_ok());
+        if let (Ok(above_surface), Ok(below_surface)) = (above_surface, below_surface) {
+            let cut = calculate_plane_volumes(&above_surface, 0.0);
+            let fill = calculate_plane_volumes(&below_surface, 0.0);
+            assert_eq!(cut, Ok(EarthworkVolumes { cut: 500.0, fill: 0.0, net: 500.0 }));
+            assert_eq!(fill, Ok(EarthworkVolumes { cut: 0.0, fill: 500.0, net: -500.0 }));
+        }
+    }
+
+    #[test]
+    fn splits_triangle_crossing_reference_plane_without_losing_volume() {
+        let data = dataset(&[
+            (0.0, 0.0, -10.0),
+            (10.0, 0.0, 10.0),
+            (0.0, 10.0, 10.0),
+        ]);
+        let surface = TinSurface::from_survey(&data);
+        assert!(surface.is_ok());
+        if let Ok(surface) = surface {
+            let volumes = calculate_plane_volumes(&surface, 0.0);
+            assert!(volumes.is_ok());
+            if let Ok(volumes) = volumes {
+                assert!((volumes.cut - 208.333_333_333_333_34).abs() < 1.0e-8);
+                assert!((volumes.fill - 41.666_666_666_666_664).abs() < 1.0e-8);
+                assert!((volumes.net - 166.666_666_666_666_69).abs() < 1.0e-8);
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_non_finite_reference_elevation() {
+        let data = dataset(&[
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 1.0),
+            (0.0, 1.0, 1.0),
+        ]);
+        let surface = TinSurface::from_survey(&data);
+        assert!(surface.is_ok());
+        if let Ok(surface) = surface {
+            assert_eq!(
+                calculate_plane_volumes(&surface, f64::NAN),
+                Err(SurfaceError::InvalidReferenceElevation)
+            );
         }
     }
 
