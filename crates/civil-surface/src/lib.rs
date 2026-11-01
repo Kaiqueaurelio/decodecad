@@ -50,6 +50,13 @@ pub struct ContourSegment {
     pub end: PlanarPoint,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ContourPolyline {
+    pub elevation: f64,
+    pub points: Vec<PlanarPoint>,
+    pub closed: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SurfaceSample {
     pub elevation: f64,
@@ -108,6 +115,10 @@ pub enum SurfaceError {
     TooManyContourSegments,
     #[error("reference elevation must be finite and within the supported coordinate range")]
     InvalidReferenceElevation,
+    #[error("contour stitching tolerance must be positive, finite and numerically representable")]
+    InvalidStitchTolerance,
+    #[error("contour segment contains an invalid elevation or coordinate")]
+    InvalidContourSegment,
 }
 
 #[derive(Clone, Copy)]
@@ -266,6 +277,186 @@ impl TinSurface {
         }
         triangles.sort_by_key(|triangle| triangle.vertices);
         Ok(Self { name: dataset.name.clone(), vertices, triangles })
+    }
+}
+
+/// Joins contour segments into ordered polylines.
+///
+/// Endpoints are grouped by a rounded XY grid with cell size tolerance. Branch nodes
+/// terminate polylines instead of choosing an arbitrary continuation. Closed loops omit
+/// the repeated closing coordinate and are marked with closed = true.
+pub fn stitch_contours(
+    segments: &[ContourSegment],
+    tolerance: f64,
+) -> Result<Vec<ContourPolyline>, SurfaceError> {
+    if !tolerance.is_finite() || tolerance <= 0.0 || tolerance > MAX_COORDINATE {
+        return Err(SurfaceError::InvalidStitchTolerance);
+    }
+    if segments.len() > MAX_CONTOUR_SEGMENTS {
+        return Err(SurfaceError::TooManyContourSegments);
+    }
+
+    let mut keys = Vec::with_capacity(segments.len());
+    let mut adjacency: BTreeMap<ContourEndpointKey, Vec<usize>> = BTreeMap::new();
+    for (index, segment) in segments.iter().enumerate() {
+        if !segment.elevation.is_finite()
+            || segment.elevation.abs() > MAX_COORDINATE
+            || !valid_planar_point(segment.start)
+            || !valid_planar_point(segment.end)
+        {
+            return Err(SurfaceError::InvalidContourSegment);
+        }
+        let start = endpoint_key(segment.start, segment.elevation, tolerance)?;
+        let end = endpoint_key(segment.end, segment.elevation, tolerance)?;
+        keys.push((start, end));
+        if start == end {
+            continue;
+        }
+        adjacency.entry(start).or_default().push(index);
+        adjacency.entry(end).or_default().push(index);
+    }
+
+    let mut used = vec![false; segments.len()];
+    let mut polylines = Vec::new();
+    for seed in 0..segments.len() {
+        if used.get(seed).copied().unwrap_or(true) {
+            continue;
+        }
+        let Some((seed_start, seed_end)) = keys.get(seed).copied() else {
+            return Err(SurfaceError::TriangulationFailed);
+        };
+        if seed_start == seed_end {
+            if let Some(slot) = used.get_mut(seed) {
+                *slot = true;
+            }
+            continue;
+        }
+
+        let start_degree = adjacency.get(&seed_start).map_or(0, Vec::len);
+        let end_degree = adjacency.get(&seed_end).map_or(0, Vec::len);
+        let start_key = if start_degree != 2 {
+            seed_start
+        } else if end_degree != 2 {
+            seed_end
+        } else if seed_start <= seed_end {
+            seed_start
+        } else {
+            seed_end
+        };
+
+        let Some(seed_segment) = segments.get(seed) else {
+            return Err(SurfaceError::TriangulationFailed);
+        };
+        let mut points = vec![segment_point_at_key(seed_segment, seed_start, seed_end, start_key)];
+        let mut current_key = start_key;
+        let mut segment_index = seed;
+        let mut closed = false;
+
+        loop {
+            let Some(already_used) = used.get(segment_index).copied() else {
+                return Err(SurfaceError::TriangulationFailed);
+            };
+            if already_used {
+                break;
+            }
+            if let Some(slot) = used.get_mut(segment_index) {
+                *slot = true;
+            }
+
+            let Some((segment_start, segment_end)) = keys.get(segment_index).copied() else {
+                return Err(SurfaceError::TriangulationFailed);
+            };
+            let next_key = if segment_start == current_key {
+                segment_end
+            } else if segment_end == current_key {
+                segment_start
+            } else {
+                return Err(SurfaceError::TriangulationFailed);
+            };
+            let Some(segment) = segments.get(segment_index) else {
+                return Err(SurfaceError::TriangulationFailed);
+            };
+
+            if next_key == start_key {
+                closed = true;
+                break;
+            }
+            points.push(segment_point_at_key(segment, segment_start, segment_end, next_key));
+            current_key = next_key;
+
+            if adjacency.get(&current_key).map_or(0, Vec::len) != 2 {
+                break;
+            }
+            let Some(next_segment) = adjacency
+                .get(&current_key)
+                .and_then(|connected| connected.iter().copied().find(|candidate| {
+                    !used.get(*candidate).copied().unwrap_or(true)
+                }))
+            else {
+                break;
+            };
+            segment_index = next_segment;
+        }
+
+        polylines.push(ContourPolyline {
+            elevation: seed_segment.elevation,
+            points,
+            closed,
+        });
+    }
+
+    Ok(polylines)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct ContourEndpointKey {
+    elevation: u64,
+    x: i64,
+    y: i64,
+}
+
+fn valid_planar_point(point: PlanarPoint) -> bool {
+    point.x.is_finite()
+        && point.y.is_finite()
+        && point.x.abs() <= MAX_COORDINATE
+        && point.y.abs() <= MAX_COORDINATE
+}
+
+fn endpoint_key(
+    point: PlanarPoint,
+    elevation: f64,
+    tolerance: f64,
+) -> Result<ContourEndpointKey, SurfaceError> {
+    let x = (point.x / tolerance).round();
+    let y = (point.y / tolerance).round();
+    if !x.is_finite()
+        || !y.is_finite()
+        || x <= i64::MIN as f64
+        || x >= i64::MAX as f64
+        || y <= i64::MIN as f64
+        || y >= i64::MAX as f64
+    {
+        return Err(SurfaceError::InvalidStitchTolerance);
+    }
+    Ok(ContourEndpointKey {
+        elevation: canonical_bits(elevation),
+        x: x as i64,
+        y: y as i64,
+    })
+}
+
+fn segment_point_at_key(
+    segment: &ContourSegment,
+    start: ContourEndpointKey,
+    end: ContourEndpointKey,
+    target: ContourEndpointKey,
+) -> PlanarPoint {
+    if target == start {
+        segment.start
+    } else if target == end {
+        segment.end
+    } else {
+        segment.start
     }
 }
 
@@ -721,6 +912,75 @@ mod tests {
         if let Ok(surface) = surface {
             assert_eq!(sample_surface(&surface, 100.0, 100.0), Err(SurfaceError::OutsideSurface));
         }
+    }
+
+    #[test]
+    fn stitches_adjacent_contour_segments_within_tolerance() {
+        let segments = [
+            ContourSegment {
+                elevation: 100.0,
+                start: PlanarPoint { x: 0.0, y: 0.0 },
+                end: PlanarPoint { x: 1.0, y: 0.0 },
+            },
+            ContourSegment {
+                elevation: 100.0,
+                start: PlanarPoint { x: 1.000_000_1, y: 0.0 },
+                end: PlanarPoint { x: 2.0, y: 0.0 },
+            },
+        ];
+        let result = stitch_contours(&segments, 0.000_001);
+        assert!(result.is_ok());
+        if let Ok(polylines) = result {
+            assert_eq!(polylines.len(), 1);
+            assert_eq!(polylines[0].points.len(), 3);
+            assert!(!polylines[0].closed);
+        }
+    }
+
+    #[test]
+    fn stitches_closed_contour_without_repeating_first_point() {
+        let segments = [
+            ContourSegment {
+                elevation: 25.0,
+                start: PlanarPoint { x: 0.0, y: 0.0 },
+                end: PlanarPoint { x: 1.0, y: 0.0 },
+            },
+            ContourSegment {
+                elevation: 25.0,
+                start: PlanarPoint { x: 1.0, y: 0.0 },
+                end: PlanarPoint { x: 1.0, y: 1.0 },
+            },
+            ContourSegment {
+                elevation: 25.0,
+                start: PlanarPoint { x: 1.0, y: 1.0 },
+                end: PlanarPoint { x: 0.0, y: 1.0 },
+            },
+            ContourSegment {
+                elevation: 25.0,
+                start: PlanarPoint { x: 0.0, y: 1.0 },
+                end: PlanarPoint { x: 0.0, y: 0.0 },
+            },
+        ];
+        let result = stitch_contours(&segments, 0.000_001);
+        assert!(result.is_ok());
+        if let Ok(polylines) = result {
+            assert_eq!(polylines.len(), 1);
+            assert_eq!(polylines[0].points.len(), 4);
+            assert!(polylines[0].closed);
+        }
+    }
+
+    #[test]
+    fn rejects_stitch_tolerance_that_cannot_represent_coordinates() {
+        let segments = [ContourSegment {
+            elevation: 0.0,
+            start: PlanarPoint { x: 1.0, y: 0.0 },
+            end: PlanarPoint { x: 2.0, y: 0.0 },
+        }];
+        assert_eq!(
+            stitch_contours(&segments, f64::MIN_POSITIVE),
+            Err(SurfaceError::InvalidStitchTolerance)
+        );
     }
 
     #[test]
