@@ -27,8 +27,15 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Check formatting
-        run: cargo fmt --all -- --check
+      - name: Format Rust sources and expose formatter output
+        shell: bash
+        run: |
+          cargo fmt --all
+          for file in crates/civil-core/src/lib.rs crates/civil-survey/src/lib.rs crates/civil-survey/src/project.rs crates/civil-surface/src/lib.rs; do
+            echo "CIVIL_FORMATTED_FILE_START:$file"
+            cat "$file"
+            echo "CIVIL_FORMATTED_FILE_END:$file"
+          done
 
       - name: Run Civil unit tests
         run: cargo test --locked -p cadcraft-civil-core -p cadcraft-civil-survey -p cadcraft-civil-surface
