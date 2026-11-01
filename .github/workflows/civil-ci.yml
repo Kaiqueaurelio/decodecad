@@ -38,8 +38,11 @@ jobs:
             echo "CIVIL_FORMATTED_FILE_END:$file"
           done
 
-      - name: Run civil tests and command registration test
-        run: cargo test --locked -p cadcraft-civil-core -p cadcraft-civil-survey -p cadcraft-civil-surface -p cadcraft-engine civil
+      - name: Run civil domain unit tests
+        run: cargo test --locked -p cadcraft-civil-core -p cadcraft-civil-survey -p cadcraft-civil-surface
+
+      - name: Run civil command registration test
+        run: cargo test --locked -p cadcraft-engine civil_contour_command_is_registered
 
       - name: Check engine command integration
         run: cargo check --locked -p cadcraft-engine
