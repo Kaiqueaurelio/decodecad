@@ -3,7 +3,14 @@
 //! The triangulator uses a normalized, deterministic Bowyer-Watson insertion order.
 //! Its current point limit is intentionally conservative because the first version
 //! scans the active triangle set for every inserted point.
-#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unimplemented,
+    clippy::todo,
+    clippy::unreachable
+)]
 #![forbid(unsafe_code)]
 
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
@@ -156,7 +163,12 @@ impl TinSurface {
         points.push(Point2 { x: 0.0, y: 32.0 });
 
         let mut working = vec![[first_super, first_super + 1, first_super + 2]];
-        for (point_index, inserted_point) in points.iter().copied().take(point_count).enumerate() {
+        for (point_index, inserted_point) in points
+            .iter()
+            .copied()
+            .take(point_count)
+            .enumerate()
+        {
             let mut bad_indices = Vec::new();
             for (triangle_index, triangle) in working.iter().enumerate() {
                 let Some(a) = points.get(triangle[0]).copied() else {
@@ -199,14 +211,13 @@ impl TinSurface {
                 if count != 1 {
                     continue;
                 }
-                let (Some(a), Some(b), Some(point)) = (
+                let (Some(a), Some(b)) = (
                     points.get(edge_a).copied(),
                     points.get(edge_b).copied(),
-                    Some(inserted_point),
                 ) else {
                     return Err(SurfaceError::TriangulationFailed);
                 };
-                let turn = orientation(a, b, point);
+                let turn = orientation(a, b, inserted_point);
                 if turn.abs() <= GEOMETRY_EPSILON {
                     continue;
                 }
