@@ -10,3 +10,5 @@ workspace = true
 cadcraft-civil-core = { path = "../civil-core" }
 serde = { workspace = true }
 thiserror = { workspace = true }
+
+serde_json = { workspace = true }
