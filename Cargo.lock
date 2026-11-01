@@ -576,6 +576,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadcraft-civil-core"
+version = "0.12.1"
+dependencies = [
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "cadcraft-civil-surface"
+version = "0.12.1"
+dependencies = [
+ "cadcraft-civil-core",
+ "cadcraft-civil-survey",
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "cadcraft-civil-survey"
+version = "0.12.1"
+dependencies = [
+ "cadcraft-civil-core",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "cadcraft-cli"
 version = "0.12.1"
 dependencies = [
