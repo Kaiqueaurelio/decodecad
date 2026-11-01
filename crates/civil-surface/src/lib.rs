@@ -650,6 +650,46 @@ mod tests {
     }
 
     #[test]
+    fn interpolates_elevation_and_downslope_aspect() {
+        let data = dataset(&[
+            (0.0, 0.0, 0.0),
+            (10.0, 0.0, 10.0),
+            (10.0, 10.0, 20.0),
+            (0.0, 10.0, 10.0),
+        ]);
+        let surface = TinSurface::from_survey(&data);
+        assert!(surface.is_ok());
+        if let Ok(surface) = surface {
+            let sample = sample_surface(&surface, 5.0, 5.0);
+            assert!(sample.is_ok());
+            if let Ok(sample) = sample {
+                assert!((sample.elevation - 10.0).abs() < 1.0e-9);
+                assert!((sample.slope_degrees - 54.735_610_317_245_346).abs() < 1.0e-8);
+                assert!(sample.aspect_degrees.is_some_and(|aspect| {
+                    (aspect - 225.0).abs() < 1.0e-8
+                }));
+            }
+        }
+    }
+
+    #[test]
+    fn reports_queries_outside_the_surface() {
+        let data = dataset(&[
+            (0.0, 0.0, 0.0),
+            (10.0, 0.0, 10.0),
+            (0.0, 10.0, 10.0),
+        ]);
+        let surface = TinSurface::from_survey(&data);
+        assert!(surface.is_ok());
+        if let Ok(surface) = surface {
+            assert_eq!(
+                sample_surface(&surface, 100.0, 100.0),
+                Err(SurfaceError::OutsideSurface)
+            );
+        }
+    }
+
+    #[test]
     fn guards_invalid_contour_parameters() {
         let data = dataset(&[
             (0.0, 0.0, 0.0),
