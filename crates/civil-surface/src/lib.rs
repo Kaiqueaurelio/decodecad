@@ -80,11 +80,11 @@ pub enum SurfaceError {
     CollinearPoints,
     #[error("TIN triangulation could not construct a valid surface")]
     TriangulationFailed,
-    #[error("contour interval must be finite, positive and within the supported coordinate range")]
+    #[error("contour interval must be finite, positive and supported")]
     InvalidContourInterval,
-    #[error("contour base elevation must be finite and within the supported coordinate range")]
+    #[error("contour datum must be finite and supported")]
     InvalidContourDatum,
-    #[error("contour generation would exceed the limit of {MAX_CONTOUR_LEVELS} levels")]
+    #[error("contour generation exceeds its level limit ({MAX_CONTOUR_LEVELS})")]
     TooManyContourLevels,
     #[error("surface contains a triangle with an invalid vertex index")]
     InvalidTriangleIndex,
@@ -94,7 +94,7 @@ pub enum SurfaceError {
     OutsideSurface,
     #[error("surface contains a degenerate triangle")]
     DegenerateTriangle,
-    #[error("contour extraction exceeds the segment limit of {MAX_CONTOUR_SEGMENTS}")]
+    #[error("too many contour segments (limit {MAX_CONTOUR_SEGMENTS})")]
     TooManyContourSegments,
 }
 
