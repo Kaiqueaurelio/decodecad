@@ -32,25 +32,25 @@ pub fn specs() -> Vec<CommandSpec> {
     ]
 }
 
-fn required_number(parameters: &Value, key: &str) -> Result<f64> {
+fn required_number(command: &str, parameters: &Value, key: &str) -> Result<f64> {
     parameters
         .get(key)
         .and_then(Value::as_f64)
         .filter(|value| value.is_finite())
-        .ok_or_else(|| bad(COMMAND, format!("parameter {key} must be a finite number")))
+        .ok_or_else(|| bad(command, format!("parameter {key} must be a finite number")))
 }
 
-fn optional_number(parameters: &Value, key: &str, default: f64) -> Result<f64> {
+fn optional_number(command: &str, parameters: &Value, key: &str, default: f64) -> Result<f64> {
     match parameters.get(key) {
         None | Some(Value::Null) => Ok(default),
         Some(value) => value
             .as_f64()
             .filter(|number| number.is_finite())
-            .ok_or_else(|| bad(COMMAND, format!("parameter {key} must be a finite number"))),
+            .ok_or_else(|| bad(command, format!("parameter {key} must be a finite number"))),
     }
 }
 
-fn parse_dataset(parameters: &Value) -> Result<(SurveyDataset, Option<ImportReport>)> {
+fn parse_dataset(command: &str, parameters: &Value) -> Result<(SurveyDataset, Option<ImportReport>)> {
     let name = parameters
         .get("name")
         .and_then(Value::as_str)
@@ -60,17 +60,17 @@ fn parse_dataset(parameters: &Value) -> Result<(SurveyDataset, Option<ImportRepo
 
     if let Some(csv) = parameters.get("csv").and_then(Value::as_str) {
         if parameters.get("points").is_some() {
-            return Err(bad(COMMAND, "provide either csv or points, not both"));
+            return Err(bad(command, "provide either csv or points, not both"));
         }
         let mapping = parameters
             .get("columns")
-            .ok_or_else(|| bad(COMMAND, "CSV import requires explicit columns mapping"))?;
+            .ok_or_else(|| bad(command, "CSV import requires explicit columns mapping"))?;
         let required_column = |key: &str| {
             mapping
                 .get(key)
                 .and_then(Value::as_u64)
                 .and_then(|value| usize::try_from(value).ok())
-                .ok_or_else(|| bad(COMMAND, format!("CSV column {key} must be a zero-based integer")))
+                .ok_or_else(|| bad(command, format!("CSV column {key} must be a zero-based integer")))
         };
         let optional_column = |key: &str| -> Result<Option<usize>> {
             match mapping.get(key) {
@@ -79,7 +79,7 @@ fn parse_dataset(parameters: &Value) -> Result<(SurveyDataset, Option<ImportRepo
                     .as_u64()
                     .and_then(|number| usize::try_from(number).ok())
                     .map(Some)
-                    .ok_or_else(|| bad(COMMAND, format!("CSV column {key} must be a zero-based integer"))),
+                    .ok_or_else(|| bad(command, format!("CSV column {key} must be a zero-based integer"))),
             }
         };
         let columns = CsvColumns {
@@ -98,19 +98,19 @@ fn parse_dataset(parameters: &Value) -> Result<(SurveyDataset, Option<ImportRepo
             "comma" => CsvDelimiter::Comma,
             "semicolon" => CsvDelimiter::Semicolon,
             "tab" => CsvDelimiter::Tab,
-            _ => return Err(bad(COMMAND, "CSV delimiter must be comma, semicolon or tab")),
+            _ => return Err(bad(command, "CSV delimiter must be comma, semicolon or tab")),
         };
         let imported = import_csv(csv, name, delimiter, &columns)
-            .map_err(|error| bad(COMMAND, error.to_string()))?;
+            .map_err(|error| bad(command, error.to_string()))?;
         return Ok((imported.dataset, Some(imported.report)));
     }
 
     let points = parameters
         .get("points")
         .and_then(Value::as_array)
-        .ok_or_else(|| bad(COMMAND, "points must be an array or csv must be supplied"))?;
+        .ok_or_else(|| bad(command, "points must be an array or csv must be supplied"))?;
     if points.len() < 3 {
-        return Err(bad(COMMAND, "at least three survey points are required"));
+        return Err(bad(command, "at least three survey points are required"));
     }
     if points.len() > cadcraft_civil_surface::MAX_TIN_POINTS {
         return Err(bad(
@@ -132,7 +132,7 @@ fn parse_dataset(parameters: &Value) -> Result<(SurveyDataset, Option<ImportRepo
             .map(str::to_owned)
             .unwrap_or_else(|| format!("P{}", index + 1));
         if !seen_ids.insert(id.clone()) {
-            return Err(bad(COMMAND, format!("duplicate point ID {id}")));
+            return Err(bad(command, format!("duplicate point ID {id}")));
         }
 
         let coordinate_number = |key: &str| {
@@ -140,14 +140,14 @@ fn parse_dataset(parameters: &Value) -> Result<(SurveyDataset, Option<ImportRepo
                 .get(key)
                 .and_then(Value::as_f64)
                 .filter(|number| number.is_finite())
-                .ok_or_else(|| bad(COMMAND, format!("point {id} requires finite {key}")))
+                .ok_or_else(|| bad(command, format!("point {id} requires finite {key}")))
         };
         let coordinate = Coordinate3::new(
             coordinate_number("x")?,
             coordinate_number("y")?,
             coordinate_number("z")?,
         )
-        .map_err(|error| bad(COMMAND, format!("point {id}: {error}")))?;
+        .map_err(|error| bad(command, format!("point {id}: {error}")))?;
 
         let optional_text = |key: &str| {
             value
@@ -176,11 +176,11 @@ fn parse_dataset(parameters: &Value) -> Result<(SurveyDataset, Option<ImportRepo
 }
 
 fn run_sample(_session: &mut Session, parameters: &Value) -> Result<Value> {
-    let (dataset, import_report) = parse_dataset(parameters)?;
+    let (dataset, import_report) = parse_dataset("civil.sample", parameters)?;
     let surface = TinSurface::from_survey(&dataset)
         .map_err(|error| bad("civil.sample", error.to_string()))?;
-    let x = required_number(parameters, "x")?;
-    let y = required_number(parameters, "y")?;
+    let x = required_number("civil.sample", parameters, "x")?;
+    let y = required_number("civil.sample", parameters, "y")?;
     let sample = sample_surface(&surface, x, y)
         .map_err(|error| bad("civil.sample", error.to_string()))?;
 
@@ -197,10 +197,10 @@ fn run_sample(_session: &mut Session, parameters: &Value) -> Result<Value> {
 }
 
 fn run_volume(_session: &mut Session, parameters: &Value) -> Result<Value> {
-    let (dataset, import_report) = parse_dataset(parameters)?;
+    let (dataset, import_report) = parse_dataset("civil.volume", parameters)?;
     let surface = TinSurface::from_survey(&dataset)
         .map_err(|error| bad("civil.volume", error.to_string()))?;
-    let reference = required_number(parameters, "referenceElevation")?;
+    let reference = required_number("civil.volume", parameters, "referenceElevation")?;
     let volumes = calculate_plane_volumes(&surface, reference)
         .map_err(|error| bad("civil.volume", error.to_string()))?;
 
@@ -216,15 +216,15 @@ fn run_volume(_session: &mut Session, parameters: &Value) -> Result<Value> {
 }
 
 fn run_contours(session: &mut Session, parameters: &Value) -> Result<Value> {
-    let interval = required_number(parameters, "interval")?;
-    let datum = optional_number(parameters, "datum", 0.0)?;
-    let tolerance = optional_number(parameters, "tolerance", DEFAULT_STITCH_TOLERANCE)?;
+    let interval = required_number(COMMAND, parameters, "interval")?;
+    let datum = optional_number(COMMAND, parameters, "datum", 0.0)?;
+    let tolerance = optional_number(COMMAND, parameters, "tolerance", DEFAULT_STITCH_TOLERANCE)?;
     let draw = parameters
         .get("draw")
         .and_then(Value::as_bool)
         .unwrap_or(true);
 
-    let (dataset, import_report) = parse_dataset(parameters)?;
+    let (dataset, import_report) = parse_dataset(COMMAND, parameters)?;
     let surface = TinSurface::from_survey(&dataset)
         .map_err(|error| bad(COMMAND, error.to_string()))?;
     let segments = generate_contours(&surface, interval, datum)
@@ -242,7 +242,7 @@ fn run_contours(session: &mut Session, parameters: &Value) -> Result<Value> {
     let volumes = match parameters.get("referenceElevation") {
         None | Some(Value::Null) => None,
         Some(_) => {
-            let reference = required_number(parameters, "referenceElevation")?;
+            let reference = required_number(COMMAND, parameters, "referenceElevation")?;
             Some(
                 calculate_plane_volumes(&surface, reference)
                     .map_err(|error| bad(COMMAND, error.to_string()))?,
@@ -311,7 +311,7 @@ mod tests {
                 {"x": 0.0, "y": 10.0, "z": 12.0, "code": "PT"}
             ]
         });
-        let result = parse_dataset(&parameters);
+        let result = parse_dataset(COMMAND, &parameters);
         assert!(result.is_ok());
         if let Ok((dataset, report)) = result {
             assert_eq!(dataset.name, "Levantamento");
@@ -331,7 +331,7 @@ mod tests {
                 {"id": "C", "x": 0.0, "y": 1.0, "z": 0.0}
             ]
         });
-        assert!(parse_dataset(&duplicate).is_err());
+        assert!(parse_dataset(COMMAND, &duplicate).is_err());
 
         let missing = json!({
             "points": [
@@ -340,7 +340,7 @@ mod tests {
                 {"id": "C", "x": 0.0, "y": 1.0}
             ]
         });
-        assert!(parse_dataset(&missing).is_err());
+        assert!(parse_dataset(COMMAND, &missing).is_err());
     }
 
     #[test]
@@ -351,7 +351,7 @@ mod tests {
             "delimiter": "comma",
             "columns": {"id": 0, "x": 1, "y": 2, "z": 3}
         });
-        let result = parse_dataset(&parameters);
+        let result = parse_dataset(COMMAND, &parameters);
         assert!(result.is_ok());
         if let Ok((dataset, report)) = result {
             assert_eq!(dataset.points.len(), 3);
