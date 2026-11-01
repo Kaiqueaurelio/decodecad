@@ -127,3 +127,6 @@ mod tests {
         assert!(matches!(import_csv(csv,"test",CsvDelimiter::Comma,&c),Err(SurveyError::InvalidCsv{..})));
     }
 }
+
+mod project;
+pub use project::{CivilProject, ProjectFileError, load_project, save_project};
