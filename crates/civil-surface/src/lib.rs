@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 
 pub const MAX_TIN_POINTS: usize = 20_000;
 pub const MAX_CONTOUR_LEVELS: usize = 10_000;
+pub const MAX_CONTOUR_SEGMENTS: usize = 2_000_000;
 const GEOMETRY_EPSILON: f64 = 1.0e-14;
 const CIRCLE_EPSILON: f64 = 1.0e-12;
 
@@ -56,6 +57,15 @@ pub struct ContourSegment {
     pub end: PlanarPoint,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SurfaceSample {
+    pub elevation: f64,
+    pub slope_degrees: f64,
+    /// Downslope azimuth clockwise from north; absent on a perfectly flat triangle.
+    pub aspect_degrees: Option<f64>,
+    pub triangle_index: usize,
+}
+
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum SurfaceError {
     #[error("at least three survey points are required to build a TIN")]
@@ -78,6 +88,14 @@ pub enum SurfaceError {
     TooManyContourLevels,
     #[error("surface contains a triangle with an invalid vertex index")]
     InvalidTriangleIndex,
+    #[error("query coordinates must be finite and within the supported coordinate range")]
+    InvalidQueryCoordinate,
+    #[error("query position lies outside the TIN surface")]
+    OutsideSurface,
+    #[error("surface contains a degenerate triangle")]
+    DegenerateTriangle,
+    #[error("contour extraction exceeds the segment limit of {MAX_CONTOUR_SEGMENTS}")]
+    TooManyContourSegments,
 }
 
 #[derive(Clone, Copy)]
@@ -271,6 +289,110 @@ impl TinSurface {
     }
 }
 
+/// Interpolates elevation and computes slope/aspect at an XY position.
+///
+/// The query is evaluated against the first containing triangle. Aspect is the
+/// downslope azimuth in degrees clockwise from north.
+pub fn sample_surface(
+    surface: &TinSurface,
+    x: f64,
+    y: f64,
+) -> Result<SurfaceSample, SurfaceError> {
+    if !x.is_finite()
+        || !y.is_finite()
+        || x.abs() > MAX_COORDINATE
+        || y.abs() > MAX_COORDINATE
+    {
+        return Err(SurfaceError::InvalidQueryCoordinate);
+    }
+
+    let query = Point2 { x, y };
+    const BARYCENTRIC_TOLERANCE: f64 = 1.0e-10;
+
+    for (triangle_index, triangle) in surface.triangles.iter().enumerate() {
+        let (Some(a), Some(b), Some(c)) = (
+            surface.vertices.get(triangle.vertices[0]),
+            surface.vertices.get(triangle.vertices[1]),
+            surface.vertices.get(triangle.vertices[2]),
+        ) else {
+            return Err(SurfaceError::InvalidTriangleIndex);
+        };
+        for vertex in [a, b, c] {
+            if !valid_coordinate(vertex.coordinate) {
+                return Err(SurfaceError::InvalidCoordinate {
+                    point_id: vertex.point_id.clone(),
+                });
+            }
+        }
+
+        let pa = Point2 {
+            x: a.coordinate.x,
+            y: a.coordinate.y,
+        };
+        let pb = Point2 {
+            x: b.coordinate.x,
+            y: b.coordinate.y,
+        };
+        let pc = Point2 {
+            x: c.coordinate.x,
+            y: c.coordinate.y,
+        };
+        let denominator = orientation(pa, pb, pc);
+        if !denominator.is_finite() || denominator == 0.0 {
+            return Err(SurfaceError::DegenerateTriangle);
+        }
+
+        let wa = orientation(pb, pc, query) / denominator;
+        let wb = orientation(pc, pa, query) / denominator;
+        let wc = orientation(pa, pb, query) / denominator;
+        if wa >= -BARYCENTRIC_TOLERANCE
+            && wb >= -BARYCENTRIC_TOLERANCE
+            && wc >= -BARYCENTRIC_TOLERANCE
+        {
+            let wa = wa.max(0.0);
+            let wb = wb.max(0.0);
+            let wc = wc.max(0.0);
+            let weight_sum = wa + wb + wc;
+            if !weight_sum.is_finite() || weight_sum <= 0.0 {
+                return Err(SurfaceError::TriangulationFailed);
+            }
+            let wa = wa / weight_sum;
+            let wb = wb / weight_sum;
+            let wc = wc / weight_sum;
+
+            let elevation = wa * a.coordinate.z
+                + wb * b.coordinate.z
+                + wc * c.coordinate.z;
+            let dx1 = b.coordinate.x - a.coordinate.x;
+            let dy1 = b.coordinate.y - a.coordinate.y;
+            let dx2 = c.coordinate.x - a.coordinate.x;
+            let dy2 = c.coordinate.y - a.coordinate.y;
+            let dz1 = b.coordinate.z - a.coordinate.z;
+            let dz2 = c.coordinate.z - a.coordinate.z;
+            let dz_dx = (dz1 * dy2 - dz2 * dy1) / denominator;
+            let dz_dy = (dx1 * dz2 - dx2 * dz1) / denominator;
+            let gradient = dz_dx.hypot(dz_dy);
+            if !elevation.is_finite() || !gradient.is_finite() {
+                return Err(SurfaceError::TriangulationFailed);
+            }
+
+            let aspect_degrees = if gradient <= f64::EPSILON {
+                None
+            } else {
+                Some((-dz_dx).atan2(-dz_dy).to_degrees().rem_euclid(360.0))
+            };
+            return Ok(SurfaceSample {
+                elevation,
+                slope_degrees: gradient.atan().to_degrees(),
+                aspect_degrees,
+                triangle_index,
+            });
+        }
+    }
+
+    Err(SurfaceError::OutsideSurface)
+}
+
 /// Extracts contour line segments at multiples of interval from datum elevation.
 ///
 /// Segments are intentionally returned individually. A later surface-processing stage
@@ -375,6 +497,9 @@ pub fn generate_contours(
                     continue;
                 };
                 if start.x != end.x || start.y != end.y {
+                    if segments.len() >= MAX_CONTOUR_SEGMENTS {
+                        return Err(SurfaceError::TooManyContourSegments);
+                    }
                     segments.push(ContourSegment {
                         elevation,
                         start,
