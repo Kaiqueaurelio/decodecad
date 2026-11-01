@@ -1,13 +1,6 @@
 //! Domain primitives shared by DecodeCAD Civil modules.
 
-#![deny(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::unimplemented,
-    clippy::todo,
-    clippy::unreachable
-)]
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
 use serde::{Deserialize, Serialize};
@@ -36,13 +29,7 @@ pub struct ProjectSettings {
 
 impl Default for ProjectSettings {
     fn default() -> Self {
-        Self {
-            linear_unit: LinearUnit::Metre,
-            crs: None,
-            horizontal_datum: None,
-            vertical_datum: None,
-            coordinate_precision: 3,
-        }
+        Self { linear_unit: LinearUnit::Metre, crs: None, horizontal_datum: None, vertical_datum: None, coordinate_precision: 3 }
     }
 }
 
@@ -58,10 +45,7 @@ impl Coordinate3 {
         if ![x, y, z].iter().all(|value| value.is_finite()) {
             return Err(CoordinateError::NonFinite);
         }
-        if [x, y, z]
-            .iter()
-            .any(|value| value.abs() > MAX_COORDINATE)
-        {
+        if [x, y, z].iter().any(|value| value.abs() > MAX_COORDINATE) {
             return Err(CoordinateError::OutOfRange);
         }
         Ok(Self { x, y, z })
@@ -82,17 +66,11 @@ mod tests {
 
     #[test]
     fn rejects_non_finite() {
-        assert_eq!(
-            Coordinate3::new(f64::NAN, 0.0, 0.0),
-            Err(CoordinateError::NonFinite)
-        );
+        assert_eq!(Coordinate3::new(f64::NAN, 0.0, 0.0), Err(CoordinateError::NonFinite));
     }
 
     #[test]
     fn rejects_extreme_values() {
-        assert_eq!(
-            Coordinate3::new(MAX_COORDINATE * 2.0, 0.0, 0.0),
-            Err(CoordinateError::OutOfRange)
-        );
+        assert_eq!(Coordinate3::new(MAX_COORDINATE * 2.0, 0.0, 0.0), Err(CoordinateError::OutOfRange));
     }
 }
