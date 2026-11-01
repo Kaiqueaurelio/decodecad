@@ -1,0 +1,37 @@
+name: DecodeCAD Civil validation
+
+on:
+  pull_request:
+    paths:
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'crates/civil-core/**'
+      - 'crates/civil-survey/**'
+      - 'crates/civil-surface/**'
+      - '.github/workflows/civil-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  civil:
+    name: Civil crates (fmt, clippy, tests)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Civil unit tests
+        run: cargo test --locked -p cadcraft-civil-core -p cadcraft-civil-survey -p cadcraft-civil-surface
+
+      - name: Run Civil Clippy
+        run: cargo clippy --locked -p cadcraft-civil-core -p cadcraft-civil-survey -p cadcraft-civil-surface --all-targets -- -D warnings
