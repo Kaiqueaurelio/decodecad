@@ -103,20 +103,23 @@ mod tests {
     fn cols()->CsvColumns { CsvColumns{id:0,x:1,y:2,z:3,code:Some(4),description:Some(5)} }
     #[test] fn imports_quoted_descriptions() {
         let csv="id,x,y,z,code,description\nP1,10,20,100,PT,\"marco, norte\"\nP2,11,21,101,PV,\n";
-        let result=import_csv(csv,"levantamento",CsvDelimiter::Comma,&cols()).expect("valid test CSV");
-        assert_eq!(result.report.accepted,2); assert_eq!(result.dataset.points[0].description.as_deref(),Some("marco, norte"));
+        let result=import_csv(csv,"levantamento",CsvDelimiter::Comma,&cols());
+        assert!(result.is_ok());
+        if let Ok(result)=result { assert_eq!(result.report.accepted,2); assert_eq!(result.dataset.points[0].description.as_deref(),Some("marco, norte")); }
     }
     #[test] fn reports_duplicate_and_invalid_rows() {
         let csv="id,x,y,z\nA,1,2,3\nA,4,5,6\nB,1,2,3\nC,NaN,0,0\n";
         let c=CsvColumns{code:None,description:None,..cols()};
-        let result=import_csv(csv,"test",CsvDelimiter::Comma,&c).expect("valid CSV structure");
-        assert_eq!(result.report.accepted,1); assert_eq!(result.report.rejected,3);
+        let result=import_csv(csv,"test",CsvDelimiter::Comma,&c);
+        assert!(result.is_ok());
+        if let Ok(result)=result { assert_eq!(result.report.accepted,1); assert_eq!(result.report.rejected,3); }
     }
     #[test] fn supports_semicolon_delimiter() {
         let csv="id;x;y;z\nP1;1.5;2.5;3.5\n";
         let c=CsvColumns{id:0,x:1,y:2,z:3,code:None,description:None};
-        let result=import_csv(csv,"test",CsvDelimiter::Semicolon,&c).expect("valid CSV");
-        assert_eq!(result.dataset.points[0].coordinate.x,1.5);
+        let result=import_csv(csv,"test",CsvDelimiter::Semicolon,&c);
+        assert!(result.is_ok());
+        if let Ok(result)=result { assert_eq!(result.dataset.points[0].coordinate.x,1.5); }
     }
     #[test] fn rejects_unterminated_quotes() {
         let csv="id,x,y,z\nP1,1,2,\"3\n";
