@@ -3,7 +3,7 @@
 use cadcraft_civil_core::Coordinate3;
 use cadcraft_civil_survey::{SurveyDataset, SurveyPoint};
 use cadcraft_civil_surface::{
-    calculate_plane_volumes, generate_contours, stitch_contours, TinSurface,
+    calculate_plane_volumes, generate_contours, sample_surface, stitch_contours, TinSurface,
 };
 use cadcraft_doc::{EntityKind, LwPolyline};
 use cadcraft_geom::{PolyVertex, Vec2};
@@ -23,6 +23,12 @@ pub fn specs() -> Vec<CommandSpec> {
             .params(
                 "{points: [{id?, x, y, z, code?, description?}, ...], interval, datum?, tolerance?, draw?: bool (default true), referenceElevation?} -> TIN, contour polylines, CAD handles and optional cut/fill",
             ),
+        CommandSpec::new("civil.sample", "Sample Civil Surface", run_sample)
+            .menu(&["Civil", "Surface", "Sample Elevation"])
+            .params("{points: [...], x, y} -> elevation, slope, aspect and triangle"),
+        CommandSpec::new("civil.volume", "Calculate Civil Earthwork", run_volume)
+            .menu(&["Civil", "Earthwork", "Volume to Datum"])
+            .params("{points: [...], referenceElevation} -> cut, fill and net volumes"),
     ]
 }
 
@@ -116,6 +122,44 @@ fn parse_dataset(parameters: &Value) -> Result<SurveyDataset> {
         name: name.to_owned(),
         points: survey_points,
     })
+}
+
+fn run_sample(_session: &mut Session, parameters: &Value) -> Result<Value> {
+    let dataset = parse_dataset(parameters)?;
+    let surface = TinSurface::from_survey(&dataset)
+        .map_err(|error| bad("civil.sample", error.to_string()))?;
+    let x = required_number(parameters, "x")?;
+    let y = required_number(parameters, "y")?;
+    let sample = sample_surface(&surface, x, y)
+        .map_err(|error| bad("civil.sample", error.to_string()))?;
+
+    Ok(json!({
+        "surface": dataset.name,
+        "x": x,
+        "y": y,
+        "elevation": sample.elevation,
+        "slopeDegrees": sample.slope_degrees,
+        "aspectDegrees": sample.aspect_degrees,
+        "triangleIndex": sample.triangle_index
+    }))
+}
+
+fn run_volume(_session: &mut Session, parameters: &Value) -> Result<Value> {
+    let dataset = parse_dataset(parameters)?;
+    let surface = TinSurface::from_survey(&dataset)
+        .map_err(|error| bad("civil.volume", error.to_string()))?;
+    let reference = required_number(parameters, "referenceElevation")?;
+    let volumes = calculate_plane_volumes(&surface, reference)
+        .map_err(|error| bad("civil.volume", error.to_string()))?;
+
+    Ok(json!({
+        "surface": dataset.name,
+        "referenceElevation": reference,
+        "cut": volumes.cut,
+        "fill": volumes.fill,
+        "net": volumes.net,
+        "unit": "coordinate_unit^3"
+    }))
 }
 
 fn run_contours(session: &mut Session, parameters: &Value) -> Result<Value> {
@@ -245,7 +289,10 @@ mod tests {
     }
 
     #[test]
-    fn civil_contour_command_is_registered() {
-        assert!(specs().iter().any(|spec| spec.id == COMMAND));
+    fn civil_commands_are_registered() {
+        let ids: Vec<&str> = specs().iter().map(|spec| spec.id).collect();
+        assert!(ids.contains(&COMMAND));
+        assert!(ids.contains(&"civil.sample"));
+        assert!(ids.contains(&"civil.volume"));
     }
 }

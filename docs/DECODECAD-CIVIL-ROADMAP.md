@@ -79,13 +79,14 @@ Não assumir que coordenadas X/Y são latitude/longitude. Armazenar o sistema de
 - [x] Criar importação CSV com mapeamento explícito de colunas e relatório por linha.
 - [ ] Validar compilação, formatação, Clippy e testes no CI.
 
-**Estado:** código inicial criado; validação automatizada ainda precisa concluir com sucesso.
+**Estado:** bibliotecas e comandos de motor foram implementados; assistente visual de importação CSV e gestão visual de superfícies ainda pendentes.
 
 ### Fase 1 — Levantamento
 - [x] Importador CSV configurável com vírgula, ponto e vírgula ou tabulação.
 - [x] Validação de linhas e relatório de erros com número de linha.
 - [x] Persistência JSON versionada dos levantamentos.
 - [ ] Tabela de pontos, seleção e revisão dentro da interface.
+- [x] Comandos do motor para gerar curvas, consultar cota/declividade e calcular corte/aterro até um plano usando pontos fornecidos em JSON.
 
 **Estado:** biblioteca de domínio pronta em código; fluxo visual ainda não integrado.
 
