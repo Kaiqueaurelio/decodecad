@@ -1,7 +1,7 @@
 //! Civil/topographic drawing commands.
 
 use cadcraft_civil_core::Coordinate3;
-use cadcraft_civil_survey::{SurveyDataset, SurveyPoint};
+use cadcraft_civil_survey::{import_csv, CsvColumns, CsvDelimiter, ImportReport, SurveyDataset, SurveyPoint};
 use cadcraft_civil_surface::{
     calculate_plane_volumes, generate_contours, sample_surface, stitch_contours, TinSurface,
 };
@@ -50,11 +50,65 @@ fn optional_number(parameters: &Value, key: &str, default: f64) -> Result<f64> {
     }
 }
 
-fn parse_dataset(parameters: &Value) -> Result<SurveyDataset> {
+fn parse_dataset(parameters: &Value) -> Result<(SurveyDataset, Option<ImportReport>)> {
+    let name = parameters
+        .get("name")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or("Civil Surface");
+
+    if let Some(csv) = parameters.get("csv").and_then(Value::as_str) {
+        if parameters.get("points").is_some() {
+            return Err(bad(COMMAND, "provide either csv or points, not both"));
+        }
+        let mapping = parameters
+            .get("columns")
+            .ok_or_else(|| bad(COMMAND, "CSV import requires explicit columns mapping"))?;
+        let required_column = |key: &str| {
+            mapping
+                .get(key)
+                .and_then(Value::as_u64)
+                .and_then(|value| usize::try_from(value).ok())
+                .ok_or_else(|| bad(COMMAND, format!("CSV column {key} must be a zero-based integer")))
+        };
+        let optional_column = |key: &str| -> Result<Option<usize>> {
+            match mapping.get(key) {
+                None | Some(Value::Null) => Ok(None),
+                Some(value) => value
+                    .as_u64()
+                    .and_then(|number| usize::try_from(number).ok())
+                    .map(Some)
+                    .ok_or_else(|| bad(COMMAND, format!("CSV column {key} must be a zero-based integer"))),
+            }
+        };
+        let columns = CsvColumns {
+            id: required_column("id")?,
+            x: required_column("x")?,
+            y: required_column("y")?,
+            z: required_column("z")?,
+            code: optional_column("code")?,
+            description: optional_column("description")?,
+        };
+        let delimiter = match parameters
+            .get("delimiter")
+            .and_then(Value::as_str)
+            .unwrap_or("comma")
+        {
+            "comma" => CsvDelimiter::Comma,
+            "semicolon" => CsvDelimiter::Semicolon,
+            "tab" => CsvDelimiter::Tab,
+            _ => return Err(bad(COMMAND, "CSV delimiter must be comma, semicolon or tab")),
+        };
+        let imported = import_csv(csv, name, delimiter, &columns)
+            .map_err(|error| bad(COMMAND, error.to_string()))?;
+        return Ok((imported.dataset, Some(imported.report)));
+    }
+
     let points = parameters
         .get("points")
         .and_then(Value::as_array)
-        .ok_or_else(|| bad(COMMAND, "points must be an array of point objects"))?;
+        .ok_or_else(|| bad(COMMAND, "points must be an array or csv must be supplied"))?;
     if points.len() < 3 {
         return Err(bad(COMMAND, "at least three survey points are required"));
     }
@@ -112,20 +166,17 @@ fn parse_dataset(parameters: &Value) -> Result<SurveyDataset> {
         });
     }
 
-    let name = parameters
-        .get("name")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|name| !name.is_empty())
-        .unwrap_or("Civil Surface");
-    Ok(SurveyDataset {
-        name: name.to_owned(),
-        points: survey_points,
-    })
+    Ok((
+        SurveyDataset {
+            name: name.to_owned(),
+            points: survey_points,
+        },
+        None,
+    ))
 }
 
 fn run_sample(_session: &mut Session, parameters: &Value) -> Result<Value> {
-    let dataset = parse_dataset(parameters)?;
+    let (dataset, import_report) = parse_dataset(parameters)?;
     let surface = TinSurface::from_survey(&dataset)
         .map_err(|error| bad("civil.sample", error.to_string()))?;
     let x = required_number(parameters, "x")?;
@@ -140,12 +191,13 @@ fn run_sample(_session: &mut Session, parameters: &Value) -> Result<Value> {
         "elevation": sample.elevation,
         "slopeDegrees": sample.slope_degrees,
         "aspectDegrees": sample.aspect_degrees,
-        "triangleIndex": sample.triangle_index
+        "triangleIndex": sample.triangle_index,
+        "importReport": import_report
     }))
 }
 
 fn run_volume(_session: &mut Session, parameters: &Value) -> Result<Value> {
-    let dataset = parse_dataset(parameters)?;
+    let (dataset, import_report) = parse_dataset(parameters)?;
     let surface = TinSurface::from_survey(&dataset)
         .map_err(|error| bad("civil.volume", error.to_string()))?;
     let reference = required_number(parameters, "referenceElevation")?;
@@ -158,7 +210,8 @@ fn run_volume(_session: &mut Session, parameters: &Value) -> Result<Value> {
         "cut": volumes.cut,
         "fill": volumes.fill,
         "net": volumes.net,
-        "unit": "coordinate_unit^3"
+        "unit": "coordinate_unit^3",
+        "importReport": import_report
     }))
 }
 
@@ -171,7 +224,7 @@ fn run_contours(session: &mut Session, parameters: &Value) -> Result<Value> {
         .and_then(Value::as_bool)
         .unwrap_or(true);
 
-    let dataset = parse_dataset(parameters)?;
+    let (dataset, import_report) = parse_dataset(parameters)?;
     let surface = TinSurface::from_survey(&dataset)
         .map_err(|error| bad(COMMAND, error.to_string()))?;
     let segments = generate_contours(&surface, interval, datum)
@@ -238,7 +291,8 @@ fn run_contours(session: &mut Session, parameters: &Value) -> Result<Value> {
         "drawnEntities": handles.len(),
         "handles": handles,
         "drawn": draw,
-        "cutFill": cut_fill
+        "cutFill": cut_fill,
+        "importReport": import_report
     }))
 }
 
@@ -259,11 +313,12 @@ mod tests {
         });
         let result = parse_dataset(&parameters);
         assert!(result.is_ok());
-        if let Ok(dataset) = result {
+        if let Ok((dataset, report)) = result {
             assert_eq!(dataset.name, "Levantamento");
             assert_eq!(dataset.points[0].id, "P1");
             assert_eq!(dataset.points[1].id, "A");
             assert_eq!(dataset.points[2].code.as_deref(), Some("PT"));
+            assert!(report.is_none());
         }
     }
 
@@ -286,6 +341,31 @@ mod tests {
             ]
         });
         assert!(parse_dataset(&missing).is_err());
+    }
+
+    #[test]
+    fn imports_csv_with_explicit_column_mapping() {
+        let parameters = json!({
+            "name": "CSV surface",
+            "csv": "id,easting,northing,level\nP1,0,0,10\nP2,10,0,11\nP3,0,10,12\n",
+            "delimiter": "comma",
+            "columns": {"id": 0, "x": 1, "y": 2, "z": 3}
+        });
+        let result = parse_dataset(&parameters);
+        assert!(result.is_ok());
+        if let Ok((dataset, report)) = result {
+            assert_eq!(dataset.points.len(), 3);
+            assert_eq!(dataset.points[2].coordinate.z, 12.0);
+            assert!(report.is_some_and(|summary| summary.accepted == 3 && summary.rejected == 0));
+        }
+    }
+
+    #[test]
+    fn rejects_csv_without_explicit_column_mapping() {
+        let parameters = json!({
+            "csv": "id,x,y,z\nP1,0,0,10\nP2,10,0,11\nP3,0,10,12\n"
+        });
+        assert!(parse_dataset(&parameters).is_err());
     }
 
     #[test]
