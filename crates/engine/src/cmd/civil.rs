@@ -366,7 +366,7 @@ mod tests {
             "csv": "id,x,y,z\nP1,0,0,10\nP2,10,0,11\nP3,0,10,12\nBAD,NaN,0,0\n",
             "columns": {"id": 0, "x": 1, "y": 2, "z": 3}
         });
-        let result = parse_dataset(&parameters);
+        let result = parse_dataset(COMMAND, &parameters);
         assert!(result.is_ok());
         if let Ok((dataset, report)) = result {
             assert_eq!(dataset.points.len(), 3);
@@ -381,7 +381,7 @@ mod tests {
         let parameters = json!({
             "csv": "id,x,y,z\nP1,0,0,10\nP2,10,0,11\nP3,0,10,12\n"
         });
-        assert!(parse_dataset(&parameters).is_err());
+        assert!(parse_dataset(COMMAND, &parameters).is_err());
     }
 
     #[test]
