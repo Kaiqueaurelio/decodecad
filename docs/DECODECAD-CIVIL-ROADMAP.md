@@ -109,12 +109,13 @@ Não assumir que coordenadas X/Y são latitude/longitude. Armazenar o sistema de
 **Estado:** extração por triângulo disponível na biblioteca; desenho, rotulagem e exportação pendentes.
 
 ### Fase 4 — Terraplenagem
-- Superfície existente e superfície projetada.
-- Comparação de superfícies com método numérico documentado.
-- Volumes de corte/aterro, relatório e mapa de diferenças.
-- Testes com volumes analíticos conhecidos.
+- [x] Cálculo inicial de corte/aterro entre o TIN e um plano horizontal de referência.
+- [x] Integração por triângulo com recorte de áreas acima/abaixo do plano e testes analíticos.
+- [ ] Comparação de duas superfícies TIN com sobreposição de triângulos e método numérico documentado.
+- [ ] Relatório por região, mapa de diferenças e quantidades por material.
+- [ ] Testes de volumes entre superfícies existentes e projetadas.
 
-**Saída:** cálculo auditável de movimentação de terra.
+**Estado:** cálculo em relação a plano implementado no núcleo; comparação de duas superfícies e apresentação no aplicativo pendentes.
 
 ### Fase 5 — Projeto geométrico viário
 - Alinhamentos horizontais.
