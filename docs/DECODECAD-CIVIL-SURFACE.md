@@ -9,6 +9,7 @@ This module adds the first computational surface pipeline for topographic survey
 - Reject duplicate XY positions, invalid coordinates, collinear input and oversized datasets.
 - Extract contour line segments at a fixed elevation interval and datum.
 - Interpolate elevation and calculate slope plus downslope aspect inside a triangle.
+- Calculate initial cut/fill volumes between the TIN and a horizontal datum plane, including triangles that cross the datum.
 - Guard malformed triangle indices and cap contour-level generation.
 
 ## Current limits
@@ -16,10 +17,12 @@ This module adds the first computational surface pipeline for topographic survey
 - The initial Bowyer-Watson implementation scans the active triangle set for each input point. It is suitable for small and medium preliminary datasets, with a hard limit of 20,000 points; it is not yet a large-survey optimized triangulator.
 - Contours are returned as independent segments and capped at two million segments per request. Polyline stitching, labels, smoothing, breaklines, boundaries, holes, and constrained Delaunay triangulation are not implemented yet.
 - The TIN is a 2.5D single-valued terrain model: duplicate XY positions are rejected, and overhangs/vertical faces are outside its scope.
+- Plane-based cut/fill is an initial reference calculation, not a comparison between two independent TINs. It assumes a non-overlapping, valid triangulation and reports volume in the cube of the project's coordinate unit.
 - Numerical predicates use normalized f64 coordinates and deterministic tolerances. High-precision adaptive predicates and independent geospatial validation remain future work.
 
 ## Rust API
 
 Use `TinSurface::from_survey(&dataset)` to generate the surface,
-`sample_surface(&surface, x, y)` to query elevation/slope/aspect, and
-`generate_contours(&surface, interval, datum)` to extract level segments.
+`sample_surface(&surface, x, y)` to query elevation/slope/aspect,
+`generate_contours(&surface, interval, datum)` to extract level segments, and
+`calculate_plane_volumes(&surface, reference_elevation)` for datum-plane cut/fill.
