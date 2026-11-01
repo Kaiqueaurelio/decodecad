@@ -1,0 +1,16 @@
+[package]
+name = "cadcraft-civil-surface"
+description = "Topographic TIN triangulation and contour extraction for DecodeCAD Civil"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+cadcraft-civil-core = { path = "../civil-core" }
+cadcraft-civil-survey = { path = "../civil-survey" }
+serde = { workspace = true }
+thiserror = { workspace = true }

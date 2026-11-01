@@ -1,0 +1,55 @@
+name: DecodeCAD Civil validation
+
+on:
+  pull_request:
+    paths:
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'crates/civil-core/**'
+      - 'crates/civil-survey/**'
+      - 'crates/civil-surface/**'
+      - 'crates/engine/**'
+      - '.github/workflows/civil-ci.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: civil-validation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  civil:
+    name: Civil domain and command integration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Format Rust sources and expose formatter output
+        shell: bash
+        run: |
+          cargo fmt --all
+          for file in crates/civil-surface/src/lib.rs crates/engine/src/cmd/civil.rs; do
+            echo "CIVIL_FORMATTED_FILE_START:$file"
+            cat "$file"
+            echo "CIVIL_FORMATTED_FILE_END:$file"
+          done
+
+      - name: Run civil domain unit tests
+        run: cargo test --locked -p cadcraft-civil-core -p cadcraft-civil-survey -p cadcraft-civil-surface
+
+      - name: Run civil command registration test
+        run: cargo test --locked -p cadcraft-engine civil_commands_are_registered
+
+      - name: Check engine command integration
+        run: cargo check --locked -p cadcraft-engine
+
+      - name: Run civil Clippy
+        run: cargo clippy --locked -p cadcraft-civil-core -p cadcraft-civil-survey -p cadcraft-civil-surface --all-targets -- -D warnings
