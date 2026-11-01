@@ -101,7 +101,8 @@ Não assumir que coordenadas X/Y são latitude/longitude. Armazenar o sistema de
 
 ### Fase 3 — Curvas e análise
 - [x] Extração inicial de segmentos de curvas de nível por intervalo e cota-base.
-- [ ] União dos segmentos em polilinhas, tratamento de platôs/saddles e fechamento de curvas.
+- [x] União dos segmentos em polilinhas abertas/fechadas com tolerância de encaixe configurável e terminação explícita em nós de ramificação.
+- [ ] Tratamento topológico de platôs/saddles e rótulos de curvas.
 - [ ] Cotas pontuais e rótulos básicos.
 - [ ] Análise de declividade e mapa de cores opcional.
 - [ ] Exportação DXF de curvas e pontos.
