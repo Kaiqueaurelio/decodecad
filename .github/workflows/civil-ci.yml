@@ -42,7 +42,7 @@ jobs:
         run: cargo test --locked -p cadcraft-civil-core -p cadcraft-civil-survey -p cadcraft-civil-surface
 
       - name: Run civil command registration test
-        run: cargo test --locked -p cadcraft-engine civil_contour_command_is_registered
+        run: cargo test --locked -p cadcraft-engine civil_commands_are_registered
 
       - name: Check engine command integration
         run: cargo check --locked -p cadcraft-engine
