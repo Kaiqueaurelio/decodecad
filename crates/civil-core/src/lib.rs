@@ -74,3 +74,4 @@ mod tests {
         assert_eq!(Coordinate3::new(MAX_COORDINATE * 2.0, 0.0, 0.0), Err(CoordinateError::OutOfRange));
     }
 }
+
