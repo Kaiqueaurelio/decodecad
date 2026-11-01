@@ -6,7 +6,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 
 use cadcraft_civil_core::{Coordinate3, MAX_COORDINATE};
 use cadcraft_civil_survey::SurveyDataset;
@@ -109,17 +109,21 @@ impl TinSurface {
             }
 
             let key = (canonical_bits(coordinate.x), canonical_bits(coordinate.y));
-            if let Some(previous_index) = seen_xy.get(&key).copied() {
-                let previous = vertices.get(previous_index);
-                let first_id = previous
-                    .map(|vertex: &SurfaceVertex| vertex.point_id.clone())
-                    .unwrap_or_default();
-                return Err(SurfaceError::DuplicatePlanarCoordinate {
-                    first_id,
-                    second_id: point.id.clone(),
-                });
+            match seen_xy.entry(key) {
+                Entry::Vacant(entry) => {
+                    entry.insert(vertices.len());
+                }
+                Entry::Occupied(entry) => {
+                    let previous = vertices.get(*entry.get());
+                    let first_id = previous
+                        .map(|vertex: &SurfaceVertex| vertex.point_id.clone())
+                        .unwrap_or_default();
+                    return Err(SurfaceError::DuplicatePlanarCoordinate {
+                        first_id,
+                        second_id: point.id.clone(),
+                    });
+                }
             }
-            seen_xy.insert(key, vertices.len());
 
             min_x = min_x.min(coordinate.x);
             min_y = min_y.min(coordinate.y);
@@ -152,7 +156,7 @@ impl TinSurface {
         points.push(Point2 { x: 0.0, y: 32.0 });
 
         let mut working = vec![[first_super, first_super + 1, first_super + 2]];
-        for point_index in 0..point_count {
+        for (point_index, inserted_point) in points.iter().copied().take(point_count).enumerate() {
             let mut bad_indices = Vec::new();
             for (triangle_index, triangle) in working.iter().enumerate() {
                 let Some(a) = points.get(triangle[0]).copied() else {
@@ -164,10 +168,7 @@ impl TinSurface {
                 let Some(c) = points.get(triangle[2]).copied() else {
                     return Err(SurfaceError::TriangulationFailed);
                 };
-                let Some(point) = points.get(point_index).copied() else {
-                    return Err(SurfaceError::TriangulationFailed);
-                };
-                if circumcircle_contains(a, b, c, point) {
+                if circumcircle_contains(a, b, c, inserted_point) {
                     bad_indices.push(triangle_index);
                 }
             }
@@ -201,7 +202,7 @@ impl TinSurface {
                 let (Some(a), Some(b), Some(point)) = (
                     points.get(edge_a).copied(),
                     points.get(edge_b).copied(),
-                    points.get(point_index).copied(),
+                    Some(inserted_point),
                 ) else {
                     return Err(SurfaceError::TriangulationFailed);
                 };
@@ -321,10 +322,7 @@ pub fn generate_contours(
             };
             let corners = [a, b, c];
             let mut intersections = Vec::with_capacity(3);
-            for edge in 0..3 {
-                let Some(start) = corners.get(edge) else {
-                    continue;
-                };
+            for (edge, start) in corners.iter().enumerate() {
                 let Some(end) = corners.get((edge + 1) % 3) else {
                     continue;
                 };
