@@ -79,3 +79,4 @@ mod tests {
         assert!(matches!(save_project(&project), Err(ProjectFileError::UnsupportedVersion(99))));
     }
 }
+
