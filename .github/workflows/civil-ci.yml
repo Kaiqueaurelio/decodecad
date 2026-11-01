@@ -12,6 +12,10 @@ on:
       - '.github/workflows/civil-ci.yml'
   workflow_dispatch:
 
+concurrency:
+  group: civil-validation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
