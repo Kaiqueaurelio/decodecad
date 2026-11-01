@@ -8,6 +8,7 @@ on:
       - 'crates/civil-core/**'
       - 'crates/civil-survey/**'
       - 'crates/civil-surface/**'
+      - 'crates/engine/**'
       - '.github/workflows/civil-ci.yml'
   workflow_dispatch:
 
@@ -16,7 +17,7 @@ permissions:
 
 jobs:
   civil:
-    name: Civil crates (fmt, clippy, tests)
+    name: Civil domain and command integration
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -31,14 +32,17 @@ jobs:
         shell: bash
         run: |
           cargo fmt --all
-          for file in crates/civil-surface/src/lib.rs; do
+          for file in crates/civil-surface/src/lib.rs crates/engine/src/cmd/civil.rs; do
             echo "CIVIL_FORMATTED_FILE_START:$file"
             cat "$file"
             echo "CIVIL_FORMATTED_FILE_END:$file"
           done
 
-      - name: Run Civil unit tests
-        run: cargo test --locked -p cadcraft-civil-core -p cadcraft-civil-survey -p cadcraft-civil-surface
+      - name: Run civil tests and command registration test
+        run: cargo test --locked -p cadcraft-civil-core -p cadcraft-civil-survey -p cadcraft-civil-surface -p cadcraft-engine civil
 
-      - name: Run Civil Clippy
+      - name: Check engine command integration
+        run: cargo check --locked -p cadcraft-engine
+
+      - name: Run civil Clippy
         run: cargo clippy --locked -p cadcraft-civil-core -p cadcraft-civil-survey -p cadcraft-civil-surface --all-targets -- -D warnings

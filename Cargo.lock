@@ -662,6 +662,9 @@ dependencies = [
 name = "cadcraft-engine"
 version = "0.12.1"
 dependencies = [
+ "cadcraft-civil-core",
+ "cadcraft-civil-surface",
+ "cadcraft-civil-survey",
  "cadcraft-color",
  "cadcraft-constraints",
  "cadcraft-doc",
@@ -677,10 +680,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
-
- "cadcraft-civil-core",
- "cadcraft-civil-survey",
- "cadcraft-civil-surface",]
 
 [[package]]
 name = "cadcraft-fonts"
