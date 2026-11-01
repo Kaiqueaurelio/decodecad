@@ -1,0 +1,11 @@
+[package]
+name = "cadcraft-civil-core"
+description = "DecodeCAD Civil domain types and project settings"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+[lints]
+workspace = true
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }
