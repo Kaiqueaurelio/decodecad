@@ -21,14 +21,14 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new(COMMAND, "Generate Civil Contours", run_contours)
             .menu(&["Civil", "Surface", "Generate Contours"])
             .params(
-                "{points: [{id?, x, y, z, code?, description?}, ...], interval, datum?, tolerance?, draw?: bool (default true), referenceElevation?} -> TIN, contour polylines, CAD handles and optional cut/fill",
+                "{points: [{id?, x, y, z, code?, description?}, ...] | csv, delimiter?, columns?, interval, datum?, tolerance?, draw?: bool (default true), referenceElevation?} -> TIN, contour polylines, CAD handles and optional cut/fill",
             ),
         CommandSpec::new("civil.sample", "Sample Civil Surface", run_sample)
             .menu(&["Civil", "Surface", "Sample Elevation"])
-            .params("{points: [...], x, y} -> elevation, slope, aspect and triangle"),
+            .params("{points: [...] | csv + delimiter + columns, x, y} -> elevation, slope, aspect and triangle"),
         CommandSpec::new("civil.volume", "Calculate Civil Earthwork", run_volume)
             .menu(&["Civil", "Earthwork", "Volume to Datum"])
-            .params("{points: [...], referenceElevation} -> cut, fill and net volumes"),
+            .params("{points: [...] | csv + delimiter + columns, referenceElevation} -> cut, fill and net volumes"),
     ]
 }
 
@@ -357,6 +357,22 @@ mod tests {
             assert_eq!(dataset.points.len(), 3);
             assert_eq!(dataset.points[2].coordinate.z, 12.0);
             assert!(report.is_some_and(|summary| summary.accepted == 3 && summary.rejected == 0));
+        }
+    }
+
+    #[test]
+    fn reports_rejected_csv_rows_without_discarding_valid_points() {
+        let parameters = json!({
+            "csv": "id,x,y,z\nP1,0,0,10\nP2,10,0,11\nP3,0,10,12\nBAD,NaN,0,0\n",
+            "columns": {"id": 0, "x": 1, "y": 2, "z": 3}
+        });
+        let result = parse_dataset(&parameters);
+        assert!(result.is_ok());
+        if let Ok((dataset, report)) = result {
+            assert_eq!(dataset.points.len(), 3);
+            assert!(report.is_some_and(|summary| {
+                summary.accepted == 3 && summary.rejected == 1 && summary.issues.len() == 1
+            }));
         }
     }
 

@@ -86,7 +86,7 @@ Não assumir que coordenadas X/Y são latitude/longitude. Armazenar o sistema de
 - [x] Validação de linhas e relatório de erros com número de linha.
 - [x] Persistência JSON versionada dos levantamentos.
 - [ ] Tabela de pontos, seleção e revisão dentro da interface.
-- [x] Comandos do motor para gerar curvas, consultar cota/declividade e calcular corte/aterro até um plano usando pontos fornecidos em JSON.
+- [x] Comandos do motor para gerar curvas, consultar cota/declividade e calcular corte/aterro até um plano usando pontos JSON ou CSV com mapeamento explícito.
 
 **Estado:** biblioteca de domínio pronta em código; fluxo visual ainda não integrado.
 

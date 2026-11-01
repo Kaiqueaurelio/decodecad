@@ -27,6 +27,23 @@ The command builds a TIN, extracts contour segments, stitches them into polyline
 
 Optional referenceElevation adds an initial cut/fill calculation between the surface and a horizontal plane. Omit draw or set it to false to calculate without adding CAD entities.
 
+
+## Import a CSV survey directly
+
+The three commands also accept a CSV string instead of the points array. Column indexes are zero-based and must be mapped explicitly.
+
+~~~json
+{
+  "name": "Levantamento CSV",
+  "csv": "id,easting,northing,elevation\nP1,0,0,100\nP2,20,0,102\nP3,0,20,103\n",
+  "delimiter": "comma",
+  "columns": {"id": 0, "x": 1, "y": 2, "z": 3},
+  "interval": 0.5
+}
+~~~
+
+Supported delimiters are comma, semicolon and tab. The command response contains importReport with accepted/rejected row totals and line-specific issues. Valid rows may still be processed when other rows are rejected; at least three valid non-collinear points are needed for a TIN. Numeric coordinates use a decimal point.
+
 ## Sample a surface
 
 Command: **civil.sample**
