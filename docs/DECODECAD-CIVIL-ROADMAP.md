@@ -1,6 +1,6 @@
 # DecodeCAD Civil — Plano de implementação
 
-**Status:** planejamento técnico inicial  
+**Status:** implementação inicial em andamento; integração com a interface ainda pendente  
 **Branch:** `feature/decodecad-civil-foundation`  
 **Objetivo:** evoluir o DecodeCAD com ferramentas reais de topografia e engenharia civil, sem substituir nem fragilizar o núcleo CAD existente.
 
@@ -73,37 +73,40 @@ Não assumir que coordenadas X/Y são latitude/longitude. Armazenar o sistema de
 ## 5. Fases de desenvolvimento
 
 ### Fase 0 — Fundação e contratos
-- Adicionar os crates e suas regras de dependência.
-- Definir unidades e tipos de coordenadas sem conversões implícitas perigosas.
-- Definir formato versionado do projeto civil e migração de versão.
-- Criar fixtures pequenas e documentação de CSV.
-- Registrar decisão sobre bibliotecas de triangulação após revisar licença, manutenção e compatibilidade WASM.
+- [x] Criar `civil-core` e `civil-survey` com regras de dependência independentes da UI.
+- [x] Definir unidades, metadados de CRS/datum e coordenadas 3D validadas.
+- [x] Criar formato JSON versionado para projetos civis, com limite de tamanho.
+- [x] Criar importação CSV com mapeamento explícito de colunas e relatório por linha.
+- [ ] Validar compilação, formatação, Clippy e testes no CI.
 
-**Saída:** workspace compila; tipos e testes básicos prontos.
+**Estado:** código inicial criado; validação automatizada ainda precisa concluir com sucesso.
 
 ### Fase 1 — Levantamento
-- Importador CSV configurável.
-- Validação e relatório de erros.
-- Tabela de pontos e seleção.
-- Persistência do conjunto de levantamento.
+- [x] Importador CSV configurável com vírgula, ponto e vírgula ou tabulação.
+- [x] Validação de linhas e relatório de erros com número de linha.
+- [x] Persistência JSON versionada dos levantamentos.
+- [ ] Tabela de pontos, seleção e revisão dentro da interface.
 
-**Saída:** importar, revisar, salvar e reabrir pontos.
+**Estado:** biblioteca de domínio pronta em código; fluxo visual ainda não integrado.
 
 ### Fase 2 — Superfície TIN
-- Triangulação 2.5D com algoritmo validado.
-- Limite externo e linhas de quebra.
-- Consultas de elevação e declividade.
-- Renderização de pontos, arestas e faces.
+- [x] Primeira triangulação Delaunay 2.5D por Bowyer-Watson, com limite inicial de 20 mil pontos.
+- [x] Rejeição explícita de coordenadas inválidas, pontos XY repetidos e conjuntos colineares.
+- [ ] Predicados geométricos adaptativos e otimização para levantamentos grandes.
+- [ ] Limite externo, linhas de quebra e áreas excluídas.
+- [ ] Consulta de elevação, declividade e interpolação.
+- [ ] Renderização de pontos, arestas e faces no desenho.
 
-**Saída:** superfície de terreno utilizável e inspecionável.
+**Estado:** núcleo de geração TIN implementado como biblioteca; ainda não é uma ferramenta visível no aplicativo.
 
 ### Fase 3 — Curvas e análise
-- Extração de curvas por intervalo.
-- Cotas pontuais e rótulos básicos.
-- Análise de declividade e mapa de cores opcional.
-- Exportação DXF de curvas e pontos.
+- [x] Extração inicial de segmentos de curvas de nível por intervalo e cota-base.
+- [ ] União dos segmentos em polilinhas, tratamento de platôs/saddles e fechamento de curvas.
+- [ ] Cotas pontuais e rótulos básicos.
+- [ ] Análise de declividade e mapa de cores opcional.
+- [ ] Exportação DXF de curvas e pontos.
 
-**Saída:** planta topográfica básica.
+**Estado:** extração por triângulo disponível na biblioteca; desenho, rotulagem e exportação pendentes.
 
 ### Fase 4 — Terraplenagem
 - Superfície existente e superfície projetada.
@@ -147,8 +150,12 @@ Não assumir que coordenadas X/Y são latitude/longitude. Armazenar o sistema de
 4. Formatos de entrada: CSV primeiro; LandXML e outros formatos entram após o fluxo MVP.
 5. Escopo de plataforma: priorizar desktop; manter o núcleo compilável em WASM sempre que as dependências permitirem.
 
-## 8. Próxima tarefa técnica
+## 8. Próximas tarefas técnicas
 
-Começar pela **Fase 0**: inspecionar os tipos reais de geometria, renderização e persistência; criar `civil-core` e `civil-survey` mínimos; adicionar testes de unidades, coordenadas e validação de pontos; integrar os crates ao workspace sem alterar o comportamento do CAD atual.
+1. Confirmar que o CI compila, formata, executa Clippy e roda os testes dos três crates civis.
+2. Fortalecer a triangulação com testes adicionais de conjuntos irregulares, cocirculares, ordem de entrada e precisão numérica.
+3. Unir segmentos de contorno em polilinhas e criar testes para bordas, platôs e saddles.
+4. Implementar consulta de elevação e declividade por interpolação baricêntrica.
+5. Persistir configurações de superfície no projeto civil e, então, integrar comandos e visualização à UI.
 
-A primeira entrega será considerada concluída somente quando o fluxo de importação, validação, persistência e reabertura de pontos funcionar no aplicativo, não apenas quando os módulos compilarem.
+A primeira entrega do produto continua condicionada ao fluxo integrado no aplicativo: importar, revisar, gerar TIN, gerar curvas, salvar e reabrir. As bibliotecas de domínio, isoladamente, ainda não concluem o MVP.
