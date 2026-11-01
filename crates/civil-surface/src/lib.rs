@@ -3,17 +3,10 @@
 //! The triangulator uses a normalized, deterministic Bowyer-Watson insertion order.
 //! Its current point limit is intentionally conservative because the first version
 //! scans the active triangle set for every inserted point.
-#![deny(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::unimplemented,
-    clippy::todo,
-    clippy::unreachable
-)]
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
-use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, btree_map::Entry};
 
 use cadcraft_civil_core::{Coordinate3, MAX_COORDINATE};
 use cadcraft_civil_survey::SurveyDataset;
@@ -128,9 +121,7 @@ impl TinSurface {
         for point in &dataset.points {
             let coordinate = point.coordinate;
             if !valid_coordinate(coordinate) {
-                return Err(SurfaceError::InvalidCoordinate {
-                    point_id: point.id.clone(),
-                });
+                return Err(SurfaceError::InvalidCoordinate { point_id: point.id.clone() });
             }
 
             let key = (canonical_bits(coordinate.x), canonical_bits(coordinate.y));
@@ -140,13 +131,8 @@ impl TinSurface {
                 }
                 Entry::Occupied(entry) => {
                     let previous = vertices.get(*entry.get());
-                    let first_id = previous
-                        .map(|vertex: &SurfaceVertex| vertex.point_id.clone())
-                        .unwrap_or_default();
-                    return Err(SurfaceError::DuplicatePlanarCoordinate {
-                        first_id,
-                        second_id: point.id.clone(),
-                    });
+                    let first_id = previous.map(|vertex: &SurfaceVertex| vertex.point_id.clone()).unwrap_or_default();
+                    return Err(SurfaceError::DuplicatePlanarCoordinate { first_id, second_id: point.id.clone() });
                 }
             }
 
@@ -154,10 +140,7 @@ impl TinSurface {
             min_y = min_y.min(coordinate.y);
             max_x = max_x.max(coordinate.x);
             max_y = max_y.max(coordinate.y);
-            vertices.push(SurfaceVertex {
-                point_id: point.id.clone(),
-                coordinate,
-            });
+            vertices.push(SurfaceVertex { point_id: point.id.clone(), coordinate });
         }
 
         let scale = (max_x - min_x).max(max_y - min_y);
@@ -169,10 +152,7 @@ impl TinSurface {
 
         let mut points = Vec::with_capacity(point_count + 3);
         for vertex in &vertices {
-            points.push(Point2 {
-                x: (vertex.coordinate.x - center_x) / scale,
-                y: (vertex.coordinate.y - center_y) / scale,
-            });
+            points.push(Point2 { x: (vertex.coordinate.x - center_x) / scale, y: (vertex.coordinate.y - center_y) / scale });
         }
 
         let first_super = points.len();
@@ -181,12 +161,7 @@ impl TinSurface {
         points.push(Point2 { x: 0.0, y: 32.0 });
 
         let mut working = vec![[first_super, first_super + 1, first_super + 2]];
-        for (point_index, inserted_point) in points
-            .iter()
-            .copied()
-            .take(point_count)
-            .enumerate()
-        {
+        for (point_index, inserted_point) in points.iter().copied().take(point_count).enumerate() {
             let mut bad_indices = Vec::new();
             for (triangle_index, triangle) in working.iter().enumerate() {
                 let Some(a) = points.get(triangle[0]).copied() else {
@@ -229,10 +204,7 @@ impl TinSurface {
                 if count != 1 {
                     continue;
                 }
-                let (Some(a), Some(b)) = (
-                    points.get(edge_a).copied(),
-                    points.get(edge_b).copied(),
-                ) else {
+                let (Some(a), Some(b)) = (points.get(edge_a).copied(), points.get(edge_b).copied()) else {
                     return Err(SurfaceError::TriangulationFailed);
                 };
                 let turn = orientation(a, b, inserted_point);
@@ -254,22 +226,15 @@ impl TinSurface {
             if triangle.iter().any(|index| *index >= point_count) {
                 continue;
             }
-            let (Some(a), Some(b), Some(c)) = (
-                points.get(triangle[0]).copied(),
-                points.get(triangle[1]).copied(),
-                points.get(triangle[2]).copied(),
-            ) else {
+            let (Some(a), Some(b), Some(c)) = (points.get(triangle[0]).copied(), points.get(triangle[1]).copied(), points.get(triangle[2]).copied())
+            else {
                 return Err(SurfaceError::TriangulationFailed);
             };
             let turn = orientation(a, b, c);
             if turn.abs() <= GEOMETRY_EPSILON {
                 continue;
             }
-            let oriented = if turn > 0.0 {
-                triangle
-            } else {
-                [triangle[1], triangle[0], triangle[2]]
-            };
+            let oriented = if turn > 0.0 { triangle } else { [triangle[1], triangle[0], triangle[2]] };
             let mut key = oriented;
             key.sort_unstable();
             if unique.insert(key) {
@@ -281,11 +246,7 @@ impl TinSurface {
             return Err(SurfaceError::CollinearPoints);
         }
         triangles.sort_by_key(|triangle| triangle.vertices);
-        Ok(Self {
-            name: dataset.name.clone(),
-            vertices,
-            triangles,
-        })
+        Ok(Self { name: dataset.name.clone(), vertices, triangles })
     }
 }
 
@@ -293,16 +254,8 @@ impl TinSurface {
 ///
 /// The query is evaluated against the first containing triangle. Aspect is the
 /// downslope azimuth in degrees clockwise from north.
-pub fn sample_surface(
-    surface: &TinSurface,
-    x: f64,
-    y: f64,
-) -> Result<SurfaceSample, SurfaceError> {
-    if !x.is_finite()
-        || !y.is_finite()
-        || x.abs() > MAX_COORDINATE
-        || y.abs() > MAX_COORDINATE
-    {
+pub fn sample_surface(surface: &TinSurface, x: f64, y: f64) -> Result<SurfaceSample, SurfaceError> {
+    if !x.is_finite() || !y.is_finite() || x.abs() > MAX_COORDINATE || y.abs() > MAX_COORDINATE {
         return Err(SurfaceError::InvalidQueryCoordinate);
     }
 
@@ -310,33 +263,20 @@ pub fn sample_surface(
     const BARYCENTRIC_TOLERANCE: f64 = 1.0e-10;
 
     for (triangle_index, triangle) in surface.triangles.iter().enumerate() {
-        let (Some(a), Some(b), Some(c)) = (
-            surface.vertices.get(triangle.vertices[0]),
-            surface.vertices.get(triangle.vertices[1]),
-            surface.vertices.get(triangle.vertices[2]),
-        ) else {
+        let (Some(a), Some(b), Some(c)) =
+            (surface.vertices.get(triangle.vertices[0]), surface.vertices.get(triangle.vertices[1]), surface.vertices.get(triangle.vertices[2]))
+        else {
             return Err(SurfaceError::InvalidTriangleIndex);
         };
         for vertex in [a, b, c] {
             if !valid_coordinate(vertex.coordinate) {
-                return Err(SurfaceError::InvalidCoordinate {
-                    point_id: vertex.point_id.clone(),
-                });
+                return Err(SurfaceError::InvalidCoordinate { point_id: vertex.point_id.clone() });
             }
         }
 
-        let pa = Point2 {
-            x: a.coordinate.x,
-            y: a.coordinate.y,
-        };
-        let pb = Point2 {
-            x: b.coordinate.x,
-            y: b.coordinate.y,
-        };
-        let pc = Point2 {
-            x: c.coordinate.x,
-            y: c.coordinate.y,
-        };
+        let pa = Point2 { x: a.coordinate.x, y: a.coordinate.y };
+        let pb = Point2 { x: b.coordinate.x, y: b.coordinate.y };
+        let pc = Point2 { x: c.coordinate.x, y: c.coordinate.y };
         let denominator = orientation(pa, pb, pc);
         if !denominator.is_finite() || denominator == 0.0 {
             return Err(SurfaceError::DegenerateTriangle);
@@ -345,10 +285,7 @@ pub fn sample_surface(
         let wa = orientation(pb, pc, query) / denominator;
         let wb = orientation(pc, pa, query) / denominator;
         let wc = orientation(pa, pb, query) / denominator;
-        if wa >= -BARYCENTRIC_TOLERANCE
-            && wb >= -BARYCENTRIC_TOLERANCE
-            && wc >= -BARYCENTRIC_TOLERANCE
-        {
+        if wa >= -BARYCENTRIC_TOLERANCE && wb >= -BARYCENTRIC_TOLERANCE && wc >= -BARYCENTRIC_TOLERANCE {
             let wa = wa.max(0.0);
             let wb = wb.max(0.0);
             let wc = wc.max(0.0);
@@ -360,9 +297,7 @@ pub fn sample_surface(
             let wb = wb / weight_sum;
             let wc = wc / weight_sum;
 
-            let elevation = wa * a.coordinate.z
-                + wb * b.coordinate.z
-                + wc * c.coordinate.z;
+            let elevation = wa * a.coordinate.z + wb * b.coordinate.z + wc * c.coordinate.z;
             let dx1 = b.coordinate.x - a.coordinate.x;
             let dy1 = b.coordinate.y - a.coordinate.y;
             let dx2 = c.coordinate.x - a.coordinate.x;
@@ -376,17 +311,8 @@ pub fn sample_surface(
                 return Err(SurfaceError::TriangulationFailed);
             }
 
-            let aspect_degrees = if gradient <= f64::EPSILON {
-                None
-            } else {
-                Some((-dz_dx).atan2(-dz_dy).to_degrees().rem_euclid(360.0))
-            };
-            return Ok(SurfaceSample {
-                elevation,
-                slope_degrees: gradient.atan().to_degrees(),
-                aspect_degrees,
-                triangle_index,
-            });
+            let aspect_degrees = if gradient <= f64::EPSILON { None } else { Some((-dz_dx).atan2(-dz_dy).to_degrees().rem_euclid(360.0)) };
+            return Ok(SurfaceSample { elevation, slope_degrees: gradient.atan().to_degrees(), aspect_degrees, triangle_index });
         }
     }
 
@@ -397,11 +323,7 @@ pub fn sample_surface(
 ///
 /// Segments are intentionally returned individually. A later surface-processing stage
 /// can stitch adjacent segments into polylines while preserving branch and saddle topology.
-pub fn generate_contours(
-    surface: &TinSurface,
-    interval: f64,
-    datum: f64,
-) -> Result<Vec<ContourSegment>, SurfaceError> {
+pub fn generate_contours(surface: &TinSurface, interval: f64, datum: f64) -> Result<Vec<ContourSegment>, SurfaceError> {
     if !interval.is_finite() || interval <= 0.0 || interval > MAX_COORDINATE {
         return Err(SurfaceError::InvalidContourInterval);
     }
@@ -413,9 +335,7 @@ pub fn generate_contours(
     let mut maximum = f64::NEG_INFINITY;
     for vertex in &surface.vertices {
         if !valid_coordinate(vertex.coordinate) {
-            return Err(SurfaceError::InvalidCoordinate {
-                point_id: vertex.point_id.clone(),
-            });
+            return Err(SurfaceError::InvalidCoordinate { point_id: vertex.point_id.clone() });
         }
         minimum = minimum.min(vertex.coordinate.z);
         maximum = maximum.max(vertex.coordinate.z);
@@ -446,11 +366,9 @@ pub fn generate_contours(
         }
 
         for triangle in &surface.triangles {
-            let (Some(a), Some(b), Some(c)) = (
-                surface.vertices.get(triangle.vertices[0]),
-                surface.vertices.get(triangle.vertices[1]),
-                surface.vertices.get(triangle.vertices[2]),
-            ) else {
+            let (Some(a), Some(b), Some(c)) =
+                (surface.vertices.get(triangle.vertices[0]), surface.vertices.get(triangle.vertices[1]), surface.vertices.get(triangle.vertices[2]))
+            else {
                 return Err(SurfaceError::InvalidTriangleIndex);
             };
             let corners = [a, b, c];
@@ -461,8 +379,7 @@ pub fn generate_contours(
                 };
                 let start_z = start.coordinate.z;
                 let end_z = end.coordinate.z;
-                let crosses = (start_z <= elevation && end_z > elevation)
-                    || (end_z <= elevation && start_z > elevation);
+                let crosses = (start_z <= elevation && end_z > elevation) || (end_z <= elevation && start_z > elevation);
                 if !crosses {
                     continue;
                 }
@@ -473,17 +390,14 @@ pub fn generate_contours(
                 }
                 let fraction = (elevation - start_z) / denominator;
                 let intersection = PlanarPoint {
-                    x: start.coordinate.x
-                        + fraction * (end.coordinate.x - start.coordinate.x),
-                    y: start.coordinate.y
-                        + fraction * (end.coordinate.y - start.coordinate.y),
+                    x: start.coordinate.x + fraction * (end.coordinate.x - start.coordinate.x),
+                    y: start.coordinate.y + fraction * (end.coordinate.y - start.coordinate.y),
                 };
                 if !intersection.x.is_finite() || !intersection.y.is_finite() {
                     return Err(SurfaceError::TriangulationFailed);
                 }
                 if !intersections.iter().any(|existing: &PlanarPoint| {
-                    existing.x.to_bits() == intersection.x.to_bits()
-                        && existing.y.to_bits() == intersection.y.to_bits()
+                    existing.x.to_bits() == intersection.x.to_bits() && existing.y.to_bits() == intersection.y.to_bits()
                 }) {
                     intersections.push(intersection);
                 }
@@ -500,11 +414,7 @@ pub fn generate_contours(
                     if segments.len() >= MAX_CONTOUR_SEGMENTS {
                         return Err(SurfaceError::TooManyContourSegments);
                     }
-                    segments.push(ContourSegment {
-                        elevation,
-                        start,
-                        end,
-                    });
+                    segments.push(ContourSegment { elevation, start, end });
                 }
             }
         }
@@ -513,17 +423,11 @@ pub fn generate_contours(
 }
 
 fn valid_coordinate(coordinate: Coordinate3) -> bool {
-    [coordinate.x, coordinate.y, coordinate.z]
-        .iter()
-        .all(|value| value.is_finite() && value.abs() <= MAX_COORDINATE)
+    [coordinate.x, coordinate.y, coordinate.z].iter().all(|value| value.is_finite() && value.abs() <= MAX_COORDINATE)
 }
 
 fn canonical_bits(value: f64) -> u64 {
-    if value == 0.0 {
-        0.0_f64.to_bits()
-    } else {
-        value.to_bits()
-    }
+    if value == 0.0 { 0.0_f64.to_bits() } else { value.to_bits() }
 }
 
 fn count_edge(edges: &mut BTreeMap<(usize, usize), usize>, a: usize, b: usize) {
@@ -544,9 +448,8 @@ fn circumcircle_contains(a: Point2, b: Point2, c: Point2, point: Point2) -> bool
     let cx = c.x - point.x;
     let cy = c.y - point.y;
 
-    let determinant = (ax * ax + ay * ay) * (bx * cy - cx * by)
-        - (bx * bx + by * by) * (ax * cy - cx * ay)
-        + (cx * cx + cy * cy) * (ax * by - bx * ay);
+    let determinant =
+        (ax * ax + ay * ay) * (bx * cy - cx * by) - (bx * bx + by * by) * (ax * cy - cx * ay) + (cx * cx + cy * cy) * (ax * by - bx * ay);
 
     determinant > -CIRCLE_EPSILON
 }
@@ -564,11 +467,7 @@ mod tests {
                 .enumerate()
                 .map(|(index, (x, y, z))| SurveyPoint {
                     id: format!("P{}", index + 1),
-                    coordinate: Coordinate3 {
-                        x: *x,
-                        y: *y,
-                        z: *z,
-                    },
+                    coordinate: Coordinate3 { x: *x, y: *y, z: *z },
                     code: None,
                     description: None,
                     source_line: index + 2,
@@ -579,12 +478,7 @@ mod tests {
 
     #[test]
     fn triangulates_a_square_into_two_triangles() {
-        let data = dataset(&[
-            (0.0, 0.0, 10.0),
-            (10.0, 0.0, 11.0),
-            (10.0, 10.0, 12.0),
-            (0.0, 10.0, 11.0),
-        ]);
+        let data = dataset(&[(0.0, 0.0, 10.0), (10.0, 0.0, 11.0), (10.0, 10.0, 12.0), (0.0, 10.0, 11.0)]);
         let surface = TinSurface::from_survey(&data);
         assert!(surface.is_ok());
         if let Ok(surface) = surface {
@@ -598,39 +492,19 @@ mod tests {
 
     #[test]
     fn rejects_duplicate_xy_even_when_elevations_differ() {
-        let data = dataset(&[
-            (0.0, 0.0, 10.0),
-            (1.0, 0.0, 11.0),
-            (0.0, 1.0, 12.0),
-            (0.0, 0.0, 15.0),
-        ]);
-        assert!(matches!(
-            TinSurface::from_survey(&data),
-            Err(SurfaceError::DuplicatePlanarCoordinate { .. })
-        ));
+        let data = dataset(&[(0.0, 0.0, 10.0), (1.0, 0.0, 11.0), (0.0, 1.0, 12.0), (0.0, 0.0, 15.0)]);
+        assert!(matches!(TinSurface::from_survey(&data), Err(SurfaceError::DuplicatePlanarCoordinate { .. })));
     }
 
     #[test]
     fn rejects_collinear_points() {
-        let data = dataset(&[
-            (0.0, 0.0, 0.0),
-            (1.0, 1.0, 1.0),
-            (2.0, 2.0, 2.0),
-        ]);
-        assert_eq!(
-            TinSurface::from_survey(&data),
-            Err(SurfaceError::CollinearPoints)
-        );
+        let data = dataset(&[(0.0, 0.0, 0.0), (1.0, 1.0, 1.0), (2.0, 2.0, 2.0)]);
+        assert_eq!(TinSurface::from_survey(&data), Err(SurfaceError::CollinearPoints));
     }
 
     #[test]
     fn creates_contour_segments_for_a_sloped_surface() {
-        let data = dataset(&[
-            (0.0, 0.0, 0.0),
-            (10.0, 0.0, 10.0),
-            (10.0, 10.0, 20.0),
-            (0.0, 10.0, 10.0),
-        ]);
+        let data = dataset(&[(0.0, 0.0, 0.0), (10.0, 0.0, 10.0), (10.0, 10.0, 20.0), (0.0, 10.0, 10.0)]);
         let surface = TinSurface::from_survey(&data);
         assert!(surface.is_ok());
         if let Ok(surface) = surface {
@@ -651,12 +525,7 @@ mod tests {
 
     #[test]
     fn interpolates_elevation_and_downslope_aspect() {
-        let data = dataset(&[
-            (0.0, 0.0, 0.0),
-            (10.0, 0.0, 10.0),
-            (10.0, 10.0, 20.0),
-            (0.0, 10.0, 10.0),
-        ]);
+        let data = dataset(&[(0.0, 0.0, 0.0), (10.0, 0.0, 10.0), (10.0, 10.0, 20.0), (0.0, 10.0, 10.0)]);
         let surface = TinSurface::from_survey(&data);
         assert!(surface.is_ok());
         if let Ok(surface) = surface {
@@ -665,44 +534,28 @@ mod tests {
             if let Ok(sample) = sample {
                 assert!((sample.elevation - 10.0).abs() < 1.0e-9);
                 assert!((sample.slope_degrees - 54.735_610_317_245_346).abs() < 1.0e-8);
-                assert!(sample.aspect_degrees.is_some_and(|aspect| {
-                    (aspect - 225.0).abs() < 1.0e-8
-                }));
+                assert!(sample.aspect_degrees.is_some_and(|aspect| { (aspect - 225.0).abs() < 1.0e-8 }));
             }
         }
     }
 
     #[test]
     fn reports_queries_outside_the_surface() {
-        let data = dataset(&[
-            (0.0, 0.0, 0.0),
-            (10.0, 0.0, 10.0),
-            (0.0, 10.0, 10.0),
-        ]);
+        let data = dataset(&[(0.0, 0.0, 0.0), (10.0, 0.0, 10.0), (0.0, 10.0, 10.0)]);
         let surface = TinSurface::from_survey(&data);
         assert!(surface.is_ok());
         if let Ok(surface) = surface {
-            assert_eq!(
-                sample_surface(&surface, 100.0, 100.0),
-                Err(SurfaceError::OutsideSurface)
-            );
+            assert_eq!(sample_surface(&surface, 100.0, 100.0), Err(SurfaceError::OutsideSurface));
         }
     }
 
     #[test]
     fn guards_invalid_contour_parameters() {
-        let data = dataset(&[
-            (0.0, 0.0, 0.0),
-            (1.0, 0.0, 1.0),
-            (0.0, 1.0, 1.0),
-        ]);
+        let data = dataset(&[(0.0, 0.0, 0.0), (1.0, 0.0, 1.0), (0.0, 1.0, 1.0)]);
         let surface = TinSurface::from_survey(&data);
         assert!(surface.is_ok());
         if let Ok(surface) = surface {
-            assert_eq!(
-                generate_contours(&surface, 0.0, 0.0),
-                Err(SurfaceError::InvalidContourInterval)
-            );
+            assert_eq!(generate_contours(&surface, 0.0, 0.0), Err(SurfaceError::InvalidContourInterval));
         }
     }
 }
