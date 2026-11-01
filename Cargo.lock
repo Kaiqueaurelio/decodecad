@@ -677,7 +677,10 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
-]
+
+ "cadcraft-civil-core",
+ "cadcraft-civil-survey",
+ "cadcraft-civil-surface",]
 
 [[package]]
 name = "cadcraft-fonts"

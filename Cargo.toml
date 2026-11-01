@@ -24,6 +24,9 @@ cadcraft-io = { path = "crates/io" }
 cadcraft-engine = { path = "crates/engine" }
 cadcraft-ui-egui = { path = "crates/ui-egui" }
 cadcraft-mcp = { path = "crates/mcp" }
+cadcraft-civil-core = { path = "crates/civil-core" }
+cadcraft-civil-survey = { path = "crates/civil-survey" }
+cadcraft-civil-surface = { path = "crates/civil-surface" }
 # Which paths stored in a drawing (xrefs, data links) may be opened.
 craft-docpath = { version = "0.1.0", git = "https://github.com/storytold/craft-libs", rev = "6e7f28518dd1cb57e1624bdc269c3c14316b13ae" }
 # PDF writing (krilla) for plots, and reading them back in tests. The root patches below pin
