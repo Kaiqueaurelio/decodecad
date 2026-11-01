@@ -1,13 +1,6 @@
 //! Survey datasets, defensive CSV import and validation.
 
-#![deny(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::unimplemented,
-    clippy::todo,
-    clippy::unreachable
-)]
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
 use std::collections::BTreeSet;
@@ -97,12 +90,7 @@ pub struct ImportResult {
 /// Imports CSV with explicit zero-based column mappings. The first row is a header.
 ///
 /// Numeric fields use a decimal point; decimal-comma guessing is deliberately avoided.
-pub fn import_csv(
-    text: &str,
-    name: impl Into<String>,
-    delimiter: CsvDelimiter,
-    columns: &CsvColumns,
-) -> Result<ImportResult, SurveyError> {
+pub fn import_csv(text: &str, name: impl Into<String>, delimiter: CsvDelimiter, columns: &CsvColumns) -> Result<ImportResult, SurveyError> {
     if text.len() > MAX_CSV_BYTES {
         return Err(SurveyError::TooLarge);
     }
@@ -116,19 +104,9 @@ pub fn import_csv(
             return Err(SurveyError::TooManyRows);
         }
         if line.len() > MAX_FIELD_BYTES * 16 {
-            return Err(SurveyError::InvalidCsv {
-                line: index + 1,
-                message: "row exceeds size limit".into(),
-            });
+            return Err(SurveyError::InvalidCsv { line: index + 1, message: "row exceeds size limit".into() });
         }
-        rows.push(
-            parse_record(line, delimiter.character()).map_err(|message| {
-                SurveyError::InvalidCsv {
-                    line: index + 1,
-                    message,
-                }
-            })?,
-        );
+        rows.push(parse_record(line, delimiter.character()).map_err(|message| SurveyError::InvalidCsv { line: index + 1, message })?);
     }
     if rows.len() < 2 {
         return Err(SurveyError::Empty);
@@ -137,19 +115,12 @@ pub fn import_csv(
     let required = [columns.id, columns.x, columns.y, columns.z];
     if required.iter().any(|index| *index >= rows[0].len())
         || columns.code.is_some_and(|index| index >= rows[0].len())
-        || columns
-            .description
-            .is_some_and(|index| index >= rows[0].len())
+        || columns.description.is_some_and(|index| index >= rows[0].len())
     {
-        return Err(SurveyError::InvalidMapping(
-            "mapped column is outside the header".into(),
-        ));
+        return Err(SurveyError::InvalidMapping("mapped column is outside the header".into()));
     }
 
-    let mut dataset = SurveyDataset {
-        name: name.into(),
-        points: Vec::new(),
-    };
+    let mut dataset = SurveyDataset { name: name.into(), points: Vec::new() };
     let mut report = ImportReport::default();
     let mut ids = BTreeSet::new();
     let mut coordinates = BTreeSet::new();
@@ -163,24 +134,14 @@ pub fn import_csv(
             Ok(point) => {
                 if !ids.insert(point.id.clone()) {
                     report.rejected += 1;
-                    report.issues.push(ImportIssue {
-                        line,
-                        message: format!("duplicate point ID: {}", point.id),
-                    });
+                    report.issues.push(ImportIssue { line, message: format!("duplicate point ID: {}", point.id) });
                     continue;
                 }
 
-                let key = (
-                    canonical_bits(point.coordinate.x),
-                    canonical_bits(point.coordinate.y),
-                    canonical_bits(point.coordinate.z),
-                );
+                let key = (canonical_bits(point.coordinate.x), canonical_bits(point.coordinate.y), canonical_bits(point.coordinate.z));
                 if !coordinates.insert(key) {
                     report.rejected += 1;
-                    report.issues.push(ImportIssue {
-                        line,
-                        message: "point duplicates an existing XYZ coordinate".into(),
-                    });
+                    report.issues.push(ImportIssue { line, message: "point duplicates an existing XYZ coordinate".into() });
                     continue;
                 }
 
@@ -197,11 +158,7 @@ pub fn import_csv(
     Ok(ImportResult { dataset, report })
 }
 
-fn parse_point(
-    row: &[String],
-    line: usize,
-    columns: &CsvColumns,
-) -> Result<SurveyPoint, String> {
+fn parse_point(row: &[String], line: usize, columns: &CsvColumns) -> Result<SurveyPoint, String> {
     let field = |index: usize| row.get(index).map(|value| value.trim()).unwrap_or("");
     let id = field(columns.id);
     if id.is_empty() {
@@ -209,9 +166,7 @@ fn parse_point(
     }
 
     let number = |index: usize, label: &str| -> Result<f64, String> {
-        let value = field(index)
-            .parse::<f64>()
-            .map_err(|_| format!("{label} is not a valid number"))?;
+        let value = field(index).parse::<f64>().map_err(|_| format!("{label} is not a valid number"))?;
         if !value.is_finite() {
             return Err(format!("{label} must be finite"));
         }
@@ -221,28 +176,14 @@ fn parse_point(
         Ok(value)
     };
 
-    let coordinate = Coordinate3::new(
-        number(columns.x, "X")?,
-        number(columns.y, "Y")?,
-        number(columns.z, "Z")?,
-    )
-    .map_err(|error: CoordinateError| error.to_string())?;
+    let coordinate = Coordinate3::new(number(columns.x, "X")?, number(columns.y, "Y")?, number(columns.z, "Z")?)
+        .map_err(|error: CoordinateError| error.to_string())?;
 
     let optional = |index: Option<usize>| {
-        index
-            .and_then(|column| row.get(column))
-            .map(|value| value.trim())
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned)
+        index.and_then(|column| row.get(column)).map(|value| value.trim()).filter(|value| !value.is_empty()).map(str::to_owned)
     };
 
-    Ok(SurveyPoint {
-        id: id.to_owned(),
-        coordinate,
-        code: optional(columns.code),
-        description: optional(columns.description),
-        source_line: line,
-    })
+    Ok(SurveyPoint { id: id.to_owned(), coordinate, code: optional(columns.code), description: optional(columns.description), source_line: line })
 }
 
 fn parse_record(line: &str, delimiter: char) -> Result<Vec<String>, String> {
@@ -289,11 +230,7 @@ fn parse_record(line: &str, delimiter: char) -> Result<Vec<String>, String> {
 }
 
 fn canonical_bits(value: f64) -> u64 {
-    if value == 0.0 {
-        0.0_f64.to_bits()
-    } else {
-        value.to_bits()
-    }
+    if value == 0.0 { 0.0_f64.to_bits() } else { value.to_bits() }
 }
 
 #[cfg(test)]
@@ -301,14 +238,7 @@ mod tests {
     use super::*;
 
     fn columns() -> CsvColumns {
-        CsvColumns {
-            id: 0,
-            x: 1,
-            y: 2,
-            z: 3,
-            code: Some(4),
-            description: Some(5),
-        }
+        CsvColumns { id: 0, x: 1, y: 2, z: 3, code: Some(4), description: Some(5) }
     }
 
     #[test]
@@ -318,21 +248,14 @@ mod tests {
         assert!(result.is_ok());
         if let Ok(result) = result {
             assert_eq!(result.report.accepted, 2);
-            assert_eq!(
-                result.dataset.points[0].description.as_deref(),
-                Some("marco, norte")
-            );
+            assert_eq!(result.dataset.points[0].description.as_deref(), Some("marco, norte"));
         }
     }
 
     #[test]
     fn reports_duplicate_and_invalid_rows() {
         let csv = "id,x,y,z\nA,1,2,3\nA,4,5,6\nB,1,2,3\nC,NaN,0,0\n";
-        let mapping = CsvColumns {
-            code: None,
-            description: None,
-            ..columns()
-        };
+        let mapping = CsvColumns { code: None, description: None, ..columns() };
         let result = import_csv(csv, "test", CsvDelimiter::Comma, &mapping);
         assert!(result.is_ok());
         if let Ok(result) = result {
@@ -344,14 +267,7 @@ mod tests {
     #[test]
     fn supports_semicolon_delimiter() {
         let csv = "id;x;y;z\nP1;1.5;2.5;3.5\n";
-        let mapping = CsvColumns {
-            id: 0,
-            x: 1,
-            y: 2,
-            z: 3,
-            code: None,
-            description: None,
-        };
+        let mapping = CsvColumns { id: 0, x: 1, y: 2, z: 3, code: None, description: None };
         let result = import_csv(csv, "test", CsvDelimiter::Semicolon, &mapping);
         assert!(result.is_ok());
         if let Ok(result) = result {
@@ -362,15 +278,8 @@ mod tests {
     #[test]
     fn rejects_unterminated_quotes() {
         let csv = "id,x,y,z\nP1,1,2,\"3\n";
-        let mapping = CsvColumns {
-            code: None,
-            description: None,
-            ..columns()
-        };
-        assert!(matches!(
-            import_csv(csv, "test", CsvDelimiter::Comma, &mapping),
-            Err(SurveyError::InvalidCsv { .. })
-        ));
+        let mapping = CsvColumns { code: None, description: None, ..columns() };
+        assert!(matches!(import_csv(csv, "test", CsvDelimiter::Comma, &mapping), Err(SurveyError::InvalidCsv { .. })));
     }
 }
 
