@@ -1,0 +1,12 @@
+[package]
+name = "cadcraft-civil-survey"
+description = "Survey point datasets and CSV import for DecodeCAD Civil"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+[lints]
+workspace = true
+[dependencies]
+cadcraft-civil-core = { path = "../civil-core" }
+serde = { workspace = true }
+thiserror = { workspace = true }
